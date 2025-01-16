@@ -25,10 +25,10 @@ pub struct Object {
     knots_j: Vec<f32>,
 
     /// Pontos de controle.
-    pub control_points: Vec<Mat4x1>,
+    pub control_points: Vec<Vec3>,
 
     /// Lista de vertices da malha interpolada.
-    vertices: Vec<Mat4x1>,
+    vertices: Vec<Vec3>,
     /// Lista de faces da malha interpolada.
     faces: Vec<[usize; 4]>,
 }
@@ -44,14 +44,13 @@ impl Object {
     ) -> Self {
         let mut rng = rand::thread_rng();
 
-        let mut control_points: Vec<Mat4x1> = Vec::with_capacity((ni + 1) * (nj + 1));
+        let mut control_points: Vec<Vec3> = Vec::with_capacity((ni + 1) * (nj + 1));
         for i in 0..=ni {
             for j in 0..=nj {
-                control_points.push(Mat4x1::new(
+                control_points.push(Vec3::new(
                     i as f32,
                     j as f32,
                     rng.gen_range(0.0..10.0),
-                    1.0,
                 ));
             }
         }
@@ -71,7 +70,7 @@ impl Object {
             knots_i,
             knots_j,
 
-            vertices: vec![Mat4x1::zeros(); resi * resj],
+            vertices: vec![Vec3::zeros(); resi * resj],
             faces: Vec::with_capacity((resi - 1) * (resj - 1)),
         };
 
@@ -84,7 +83,7 @@ impl Object {
     pub fn gen_mesh(&mut self) {
         // Zera os vértices iniciais
         for ipt in &mut self.vertices {
-            *ipt = Mat4x1::new(0.0, 0.0, 0.0, 1.0);
+            *ipt = Vec3::new(0.0, 0.0, 0.0);
         }
 
         // Cálculo dos incrementos
@@ -107,7 +106,7 @@ impl Object {
         let arc_control_points = Arc::new(self.control_points.clone());
 
         // Precisamos de Mutex para poder escrever em 'vertices' paralelamente
-        let arc_vertices = Arc::new(Mutex::new(vec![Mat4x1::zeros(); self.resi * self.resj]));
+        let arc_vertices = Arc::new(Mutex::new(vec![Vec3::zeros(); self.resi * self.resj]));
 
         // Clonamos valores necessários (por simplicidade, eles podem ser copiados ou clonados)
         let ni = self.ni;
@@ -135,7 +134,7 @@ impl Object {
             let handle = std::thread::spawn(move || {
                 // Vetor local para armazenar o resultado parcial
                 let mut local_vertices =
-                    vec![Mat4x1::new(0.0, 0.0, 0.0, 1.0); (end_i - start_i) * resj];
+                    vec![Vec3::new(0.0, 0.0, 0.0); (end_i - start_i) * resj];
 
                 // Iniciamos o intervalo de i de acordo com start_i
                 let mut interval_i = start_i as f32 * increment_i;
@@ -242,7 +241,7 @@ impl Object {
     }
 
     /// Retorna slice imutável para vértices da malha
-    pub fn get_vertices(&self) -> &[Mat4x1] {
+    pub fn get_vertices(&self) -> &[Vec3] {
         &self.vertices
     }
 
