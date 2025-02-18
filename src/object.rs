@@ -1,3 +1,4 @@
+use eframe::glow::ANY_SAMPLES_PASSED;
 use rand::Rng;
 use std::sync::{Arc, Mutex};
 use std::cmp::min;
@@ -250,23 +251,90 @@ impl Object {
         &self.faces
     }
 
-    pub fn translate(&mut self, dx: f32, dy: f32, dz: f32) {
-        todo!()
-    }
+    use nalgebra::Matrix4;
 
-    pub fn scale(&mut self, s: f32) {
-        todo!()
-    }
-
-    pub fn rotate_x(&mut self, angle: f32) {
-        todo!()
-    }
-
-    pub fn rotate_y(&mut self, angle: f32) {
-        todo!()
-    }
-
-    pub fn rotate_z(&mut self, angle: f32) {
-        todo!()
+    impl Object {
+        pub fn translate(&mut self, dx: f32, dy: f32, dz: f32) {
+            let translation_matrix = Matrix4::new(
+                1.0, 0.0, 0.0, dx,
+                0.0, 1.0, 0.0, dy,
+                0.0, 0.0, 1.0, dz,
+                0.0, 0.0, 0.0, 1.0,
+            );
+    
+            for p in &mut self.control_points {
+                let v = translation_matrix * p.to_homogeneous();
+                *p = v.xyz();
+            }
+    
+            self.generate_mesh();
+        }
+    
+        pub fn scale(&mut self, sx: f32, sy: f32, sz: f32) {
+            let scale_matrix = Matrix4::new(
+                sx, 0.0, 0.0, 0.0,
+                0.0, sy, 0.0, 0.0,
+                0.0, 0.0, sz, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            );
+    
+            for p in &mut self.control_points {
+                let v = scale_matrix * p.to_homogeneous();
+                *p = v.xyz();
+            }
+    
+            self.generate_mesh();
+        }
+    
+        pub fn rotate_x(&mut self, angle: f32) {
+            let cos_theta = angle.cos();
+            let sin_theta = angle.sin();
+    
+            let rotation_matrix = Matrix4::new(
+                1.0, 0.0, 0.0, 0.0,
+                0.0, cos_theta, -sin_theta, 0.0,
+                0.0, sin_theta, cos_theta, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            );
+    
+            for p in &mut self.control_points {
+                let v = rotation_matrix * p.to_homogeneous();
+                *p = v.xyz();
+            }
+        }
+    
+        pub fn rotate_y(&mut self, angle: f32) {
+            let cos_theta = angle.cos();
+            let sin_theta = angle.sin();
+    
+            let rotation_matrix = Matrix4::new(
+                cos_theta, 0.0, sin_theta, 0.0,
+                0.0, 1.0, 0.0, 0.0,
+                -sin_theta, 0.0, cos_theta, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            );
+    
+            for p in &mut self.control_points {
+                let v = rotation_matrix * p.to_homogeneous();
+                *p = v.xyz();
+            }
+        }
+    
+        pub fn rotate_z(&mut self, angle: f32) {
+            let cos_theta = angle.cos();
+            let sin_theta = angle.sin();
+    
+            let rotation_matrix = Matrix4::new(
+                cos_theta, -sin_theta, 0.0, 0.0,
+                sin_theta, cos_theta, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            );
+    
+            for p in &mut self.control_points {
+                let v = rotation_matrix * p.to_homogeneous();
+                *p = v.xyz();
+            }
+        }
     }
 }
