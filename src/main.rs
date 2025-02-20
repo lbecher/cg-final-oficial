@@ -5,13 +5,27 @@ mod render;
 mod types;
 mod utils;
 
+use constants::{GUI_MENUBAR_HEIGHT, GUI_PADDING, GUI_SIDEBAR_WIDTH, GUI_VIEWPORT_HEIGHT, GUI_VIEWPORT_WIDTH};
 use eframe::{NativeOptions, Result, run_native};
+use eframe::egui::{Vec2, ViewportBuilder};
 use app::App;
 
 fn main() -> Result {
     let title = "Aleluia";
 
-    let options = NativeOptions::default();
+    let width = GUI_VIEWPORT_WIDTH + GUI_SIDEBAR_WIDTH + GUI_PADDING * 4.0;
+    let height = GUI_VIEWPORT_HEIGHT + GUI_MENUBAR_HEIGHT + GUI_PADDING * 2.0;
+
+    let options = NativeOptions {
+        viewport: ViewportBuilder {
+            inner_size: Some(Vec2::new(width, height)),
+            resizable: Some(false),
+            maximize_button: Some(false),
+            minimize_button: Some(false),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
 
     run_native(
         title,
