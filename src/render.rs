@@ -72,21 +72,22 @@ impl Render {
     }
 
     /// Calcula a matriz de transformação de coordenadas em SRU para SRC.
-    fn calc_sru_src_matrix(camera: &Camera, nn: &Vec3) -> Mat4 {
-        let n = camera.vrp - camera.p;
-        let v = camera.y - (camera.y.dot(n) * n);
-        let u = v.cross(n);
+    fn calc_sru_src_matrix(&self, nn: &Vec3) -> Mat4 {
+        let v: Vec3 = self.camera.y - (self.camera.y.dot(nn) * nn);
+        let vn: Vec3 = v.normalize();
+        let u: Vec3 = vn.cross(nn);
+        let un: Vec3 = u.normalize();
 
         Mat4::new(
-            u.x, u.y, u.z, -camera.vrp.dot(u),
-            v.x, v.y, v.z, -camera.vrp.dot(v),
-            n.x, n.y, n.z, -camera.vrp.dot(n),
+            un.x, un.y, un.z, -self.camera.vrp.dot(&un),
+            vn.x, vn.y, vn.z, -self.camera.vrp.dot(&vn),
+            nn.x, nn.y, nn.z, -self.camera.vrp.dot(nn),
             0.0, 0.0, 0.0, 1.0,
         )
     }
 
     /// Calcula a matriz de projeção axonométrica isométrica.
-    fn calc_orth_matrix(&self) -> Mat4 {
+    fn calc_axon_matrix(&self) -> Mat4 {
         let zvp = -self.camera.dp;
         let zprp = 0.0;
 
@@ -114,7 +115,9 @@ impl Render {
     }
 
     /// Calcula a matriz de transformação de coordenadas em SRU para SRT (matriz concatenada).
-    fn calc_sru_srt_orth_matrix(&self) -> Mat4 {
-        self.calc_jp_matrix() * self.calc_orth_matrix() * Render::calc_sru_src_matrix(&self.camera)
+    fn calc_sru_srt_axon_matrix(&self) -> Mat4 {
+        let n: Vec3 = self.camera.vrp - self.camera.p;
+        let nn: Vec3 = n.normalize();
+        self.calc_jp_matrix() * self.calc_axon_matrix() * self.calc_sru_src_matrix(&nn)
     }
 }
