@@ -1,12 +1,6 @@
 use crate::types::*;
 
 #[derive(Clone, PartialEq)]
-pub enum ProjectionType {
-    Axonometric,
-    Perspective,
-}
-
-#[derive(Clone, PartialEq)]
 pub enum ShaderType {
     Wireframe,
     Constant,
@@ -37,7 +31,6 @@ pub struct Viewport {
 
 pub struct Render {
     shader_type: ShaderType,
-    projection_type: ProjectionType,
     camera: Camera,
     window: Window,
     viewport: Viewport,
@@ -48,7 +41,6 @@ impl Render {
     pub fn new() -> Self {
         Self {
             shader_type: ShaderType::Wireframe,
-            projection_type: ProjectionType::Axonometric,
             camera: Camera {
                 vrp: Vec3::new(0.0, 0.0, 0.0),
                 p: Vec3::new(0.0, 0.0, 1.0),
@@ -91,10 +83,18 @@ impl Render {
         let zvp = -self.camera.dp;
         let zprp = 0.0;
 
+        let alpha = 35.26_f32.to_radians();
+        let beta = 45.0_f32.to_radians();
+
         Mat4::new(
             1.0, 0.0, 0.0, 0.0,
             0.0, 1.0, 0.0, 0.0,
             0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ) * Mat4::new(
+            (beta.cos()), 0.0, (beta.sin()), 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            (beta.sin()), 0.0, (beta.cos()), 0.0,
             0.0, 0.0, 0.0, 1.0,
         )
     }

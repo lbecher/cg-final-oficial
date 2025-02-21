@@ -26,9 +26,11 @@ pub struct Object {
 
     /// Pontos de controle.
     pub control_points: Vec<Vec3>,
-
+    pub control_points_srt: Vec<Vec3>,
     /// Lista de vertices da malha interpolada.
-    vertices: Vec<Vec3>,
+    pub vertices: Vec<Vec3>,
+    pub vertices_srt: Vec<Vec3>,
+
     /// Lista de faces da malha interpolada.
     faces: Vec<[usize; 4]>,
 }
