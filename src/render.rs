@@ -94,8 +94,8 @@ impl Render {
         Mat4::new(
             1.0, 0.0, 0.0, 0.0,
             0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, -zvp / self.camera.dp, zvp * (zprp / self.camera.dp),
-            0.0, 0.0, -1.0 / self.camera.dp, zprp / self.camera.dp,
+            0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
         )
     }
 
