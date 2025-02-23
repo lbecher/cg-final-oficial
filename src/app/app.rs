@@ -21,7 +21,6 @@ pub struct App {
     l: VectorInputData,
 
     control_points: Vec<Vec3>,
-    degree: usize,
 
     theme: Theme,
 }
@@ -52,7 +51,6 @@ impl Default for App {
                 Vec3::new(200.0, 200.0, 0.0),
                 Vec3::new(300.0, 100.0, 0.0),
             ],
-            degree: 3,
 
             theme: Theme::Dark,
         }
@@ -144,7 +142,6 @@ impl App {
                 self.objects[idx].calc_mesh();
                 self.objects[idx].calc_centroid();
                 self.objects[idx].calc_srt_convertions(&m_sru_srt);
-                println!("MOD_CP: {:?}", self.objects[idx].control_points_srt);
             }
         }
     }
