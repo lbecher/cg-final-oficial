@@ -33,6 +33,9 @@ pub struct Object {
 
     /// Lista de faces da malha interpolada.
     faces: Vec<[usize; 4]>,
+
+    /// Número de iterações de suavização das coordenadas z.
+    pub smoothing_iterations: usize,
 }
 
 impl Object {
@@ -43,6 +46,8 @@ impl Object {
         tj: usize,
         resi: usize,
         resj: usize,
+        smoothing_iterations: usize,
+        m_sru_srt: &Mat4,
     ) -> Self {
         let mut rng = rand::thread_rng();
 
@@ -60,6 +65,8 @@ impl Object {
         let knots_i: Vec<f32> = Self::spline_knots(ni, ti);
         let knots_j: Vec<f32> = Self::spline_knots(nj, tj);
 
+        let vertices: Vec<Vec3> = vec![Vec3::zeros(); resi * resj];
+
         let mut obj = Self {
             ni,
             nj,
@@ -67,38 +74,93 @@ impl Object {
             tj,
             resi,
             resj,
+            control_points_srt: vec![Vec3::zeros(); control_points.len()],
             control_points,
 
             knots_i,
             knots_j,
 
-            vertices: vec![Vec3::zeros(); resi * resj],
+            vertices_srt: vec![Vec3::zeros(); vertices.len()],
+            vertices,
+            
             faces: Vec::with_capacity((resi - 1) * (resj - 1)),
+
+            smoothing_iterations,
         };
 
-        obj.gen_mesh();
+        obj.calc_mesh();
+        obj.gen_faces(); // Gera as faces apenas uma vez durante a inicialização
+        obj.calc_srt_convertions(m_sru_srt);
 
         obj
     }
 
+    fn spline_knots(n: usize, t: usize) -> Vec<f32> {
+        let mut knots = Vec::with_capacity(n + t + 1);
+        for j in 0..=(n + t) {
+            if j < t {
+                knots.push(0.0);
+            } else if j <= n {
+                knots.push((j + 1 - t) as f32);
+            } else {
+                knots.push((n + 2 - t) as f32);
+            }
+        }
+        knots
+    }
+
+    fn spline_blend(k: usize, t: usize, u: &[f32], v: f32) -> f32 {
+        if t == 1 {
+            if u[k] <= v && v < u[k + 1] {
+                1.0
+            } else {
+                0.0
+            }
+        } else {
+            let mut value = 0.0;
+            let denom1 = u[k + t - 1] - u[k];
+            let denom2 = u[k + t] - u[k + 1];
+
+            if denom1 != 0.0 {
+                value += ((v - u[k]) / denom1) * Self::spline_blend(k, t - 1, u, v);
+            }
+            if denom2 != 0.0 {
+                value += ((u[k + t] - v) / denom2) * Self::spline_blend(k + 1, t - 1, u, v);
+            }
+            value
+        }
+    }
+
     /// Gera a malha da superfície.
-    pub fn gen_mesh(&mut self) {
+    pub fn calc_mesh(&mut self) {
+        let ni = self.ni;
+        let nj = self.nj;
+        let ti = self.ti;
+        let tj = self.tj;
+        let resi = self.resi;
+        let resj = self.resj;
+
+        // Suavizar os pontos de controle se o número de iterações for maior que zero
+        if self.smoothing_iterations > 0 {
+            self.smooth_control_points(self.smoothing_iterations);
+        }
+        
         // Zera os vértices iniciais
         for ipt in &mut self.vertices {
             *ipt = Vec3::new(0.0, 0.0, 0.0);
         }
 
         // Cálculo dos incrementos
-        let increment_i = (self.ni as f32 - self.ti as f32 + 2.0) / self.resi as f32;
-        let increment_j = (self.nj as f32 - self.tj as f32 + 2.0) / self.resj as f32;
+        let increment_i = (self.ni as f32 - self.ti as f32 + 2.0) / resi as f32;
+        let increment_j = (self.nj as f32 - self.tj as f32 + 2.0) / resj as f32;
 
         // Vamos obter o número de threads
         let n_threads = crate::utils::num_cpu_threads();
 
         // Dividimos as linhas (i) em blocos para cada thread processar
         // Pegamos o resto da divisão para distribuir as iterações que sobraram entre as threads
-        let chunk_size = self.resi / n_threads;
-        let remainder = self.resi % n_threads;
+        let chunk_size = resi / n_threads;
+        let remainder = resi % n_threads;
 
         // Para facilitar o acesso concorrente, usamos Arc para ler e escrever de forma segura.
         // - knots_i e knots_j, control_points são apenas lidos (podem ser compartilhados sem Mutex).
@@ -108,15 +170,7 @@ impl Object {
         let arc_control_points = Arc::new(self.control_points.clone());
 
         // Precisamos de Mutex para poder escrever em 'vertices' paralelamente
-        let arc_vertices = Arc::new(Mutex::new(vec![Vec3::zeros(); self.resi * self.resj]));
-
-        // Clonamos valores necessários (por simplicidade, eles podem ser copiados ou clonados)
-        let ni = self.ni;
-        let nj = self.nj;
-        let ti = self.ti;
-        let tj = self.tj;
-        let resi = self.resi;
-        let resj = self.resj;
+        let arc_vertices = Arc::new(Mutex::new(vec![Vec3::zeros(); resi * resj]));
 
         // Vetor de handles de thread
         let mut handles = Vec::with_capacity(n_threads);
@@ -165,7 +219,7 @@ impl Object {
                     interval_i += increment_i;
                 }
 
-                // Copiamos o resultado parcial para o vetor global
+                // Copiar o resultado parcial para o vetor global
                 {
                     let mut global_vertices = vertices.lock().unwrap();
                     for i_local in 0..(end_i - start_i) {
@@ -181,64 +235,52 @@ impl Object {
             handles.push(handle);
         }
 
-        // Esperamos todas as threads terminarem
+        // Esperar todas as threads terminarem
         for handle in handles {
             handle.join().unwrap();
         }
 
-        // Agora podemos recuperar os vértices calculados para dentro de self.vertices
+        // Recuperar os vértices calculados para dentro de self.vertices
         {
             let final_vertices = arc_vertices.lock().unwrap();
             self.vertices.copy_from_slice(&final_vertices);
         }
 
-        // Por fim, geramos as faces (pode ser paralelizado também, mas aqui está em uma thread só)
+        // Suavizar as coordenadas z dos vértices se o número de iterações for maior que zero
+        if self.smoothing_iterations > 0 {
+            self.smooth_z(self.smoothing_iterations);
+        }
+    }
+
+    /// Gera as faces da malha.
+    fn gen_faces(&mut self) {
         self.faces.clear();
-        for i in 0..resi - 1 {
-            for j in 0..resj - 1 {
+        for i in 0..self.resi - 1 {
+            for j in 0..self.resj - 1 {
                 self.faces.push([
-                    i * resj + j,
-                    i * resj + (j + 1),
-                    (i + 1) * resj + (j + 1),
-                    (i + 1) * resj + j,
+                    i * self.resj + j,
+                    i * self.resj + (j + 1),
+                    (i + 1) * self.resj + (j + 1),
+                    (i + 1) * self.resj + j,
                 ]);
             }
         }
     }
 
-    fn spline_knots(n: usize, t: usize) -> Vec<f32> {
-        let mut knots = Vec::with_capacity(n + t + 1);
-        for j in 0..=(n + t) {
-            if j < t {
-                knots.push(0.0);
-            } else if j <= n {
-                knots.push((j + 1 - t) as f32);
-            } else {
-                knots.push((n + 2 - t) as f32);
-            }
+    /// Gera as conversões dos pontos de controle e vértices para o sistema de referência da tela.
+    pub fn calc_srt_convertions(&mut self, m_sru_srt: &Mat4) {
+        for (i, control_point) in self.control_points.iter().enumerate() {
+            let mut control_point_srt: Mat4x1 = m_sru_srt * vec3_to_mat4x1(control_point);
+            control_point_srt.x /= control_point_srt.w;
+            control_point_srt.y /= control_point_srt.w;
+            self.control_points_srt[i] = control_point_srt.xyz();
         }
-        knots
-    }
 
-    fn spline_blend(k: usize, t: usize, u: &[f32], v: f32) -> f32 {
-        if t == 1 {
-            if u[k] <= v && v < u[k + 1] {
-                1.0
-            } else {
-                0.0
-            }
-        } else {
-            let mut value = 0.0;
-            let denom1 = u[k + t - 1] - u[k];
-            let denom2 = u[k + t] - u[k + 1];
-
-            if denom1 != 0.0 {
-                value += ((v - u[k]) / denom1) * Self::spline_blend(k, t - 1, u, v);
-            }
-            if denom2 != 0.0 {
-                value += ((u[k + t] - v) / denom2) * Self::spline_blend(k + 1, t - 1, u, v);
-            }
-            value
+        for (i, vertex) in self.vertices.iter().enumerate() {
+            let mut vertex_srt: Mat4x1 = m_sru_srt * vec3_to_mat4x1(vertex);
+            vertex_srt.x /= vertex_srt.w;
+            vertex_srt.y /= vertex_srt.w;
+            self.vertices_srt[i] = vertex_srt.xyz();
         }
     }
 
@@ -252,6 +294,10 @@ impl Object {
         &self.faces
     }
 
+    //--------------------------------------------------------------------------------
+    // Métodos de transformação
+    //--------------------------------------------------------------------------------
+
     pub fn translate(&mut self, dx: f32, dy: f32, dz: f32) {
         let translation_matrix: Mat4 = Mat4::new(
             1.0, 0.0, 0.0, dx,
@@ -260,14 +306,24 @@ impl Object {
             0.0, 0.0, 0.0, 1.0,
         );
 
-        for p in &mut self.control_points {
-            let v = translation_matrix * p.to_homogeneous();
-            *p = v.xyz();
+        for control_point in self.control_points.iter_mut() {
+            let cp: Mat4x1 = translation_matrix * vec3_to_mat4x1(control_point);
+            *control_point = cp.xyz();
         }
 
-        for v in &mut self.vertices {
-            let vt = translation_matrix * v.to_homogeneous();
-            *v = vt.xyz();
+        for control_point_srt in self.control_points_srt.iter_mut() {
+            let cp: Mat4x1 = translation_matrix * vec3_to_mat4x1(control_point_srt);
+            *control_point_srt = cp.xyz();
+        }
+
+        for vertex in self.vertices.iter_mut(){
+            let vt: Mat4x1 = translation_matrix * vec3_to_mat4x1(vertex);
+            *vertex = vt.xyz();
+        }
+
+        for vertex_srt in self.vertices_srt.iter_mut(){
+            let vt: Mat4x1 = translation_matrix * vec3_to_mat4x1(vertex_srt);
+            *vertex_srt = vt.xyz();
         }
     }
 
@@ -279,14 +335,24 @@ impl Object {
             0.0, 0.0, 0.0, 1.0,
         );
 
-        for p in &mut self.control_points {
-            let v = scale_matrix * p.to_homogeneous();
-            *p = v.xyz();
+        for control_point in self.control_points.iter_mut() {
+            let cp: Mat4x1 = scale_matrix * vec3_to_mat4x1(control_point);
+            *control_point = cp.xyz();
         }
 
-        for v in &mut self.vertices {
-            let vt = scale_matrix * v.to_homogeneous();
-            *v = vt.xyz();
+        for control_point_srt in self.control_points_srt.iter_mut() {
+            let cp: Mat4x1 = scale_matrix * vec3_to_mat4x1(control_point_srt);
+            *control_point_srt = cp.xyz();
+        }
+
+        for vertex in self.vertices.iter_mut(){
+            let vt: Mat4x1 = scale_matrix * vec3_to_mat4x1(vertex);
+            *vertex = vt.xyz();
+        }
+
+        for vertex_srt in self.vertices_srt.iter_mut(){
+            let vt: Mat4x1 = scale_matrix * vec3_to_mat4x1(vertex_srt);
+            *vertex_srt = vt.xyz();
         }
     }
 
@@ -301,14 +367,24 @@ impl Object {
             0.0, 0.0, 0.0, 1.0,
         );
 
-        for p in &mut self.control_points {
-            let v = rotation_matrix * p.to_homogeneous();
-            *p = v.xyz();
+        for control_point in self.control_points.iter_mut() {
+            let cp: Mat4x1 = rotation_matrix * vec3_to_mat4x1(control_point);
+            *control_point = cp.xyz();
         }
 
-        for v in &mut self.vertices {
-            let vt = rotation_matrix * v.to_homogeneous();
-            *v = vt.xyz();
+        for control_point_srt in self.control_points_srt.iter_mut() {
+            let cp: Mat4x1 = rotation_matrix * vec3_to_mat4x1(control_point_srt);
+            *control_point_srt = cp.xyz();
+        }
+
+        for vertex in self.vertices.iter_mut(){
+            let vt: Mat4x1 = rotation_matrix * vec3_to_mat4x1(vertex);
+            *vertex = vt.xyz();
+        }
+
+        for vertex_srt in self.vertices_srt.iter_mut(){
+            let vt: Mat4x1 = rotation_matrix * vec3_to_mat4x1(vertex_srt);
+            *vertex_srt = vt.xyz();
         }
     }
 
@@ -323,14 +399,24 @@ impl Object {
             0.0, 0.0, 0.0, 1.0,
         );
 
-        for p in &mut self.control_points {
-            let v = rotation_matrix * p.to_homogeneous();
-            *p = v.xyz();
+        for control_point in self.control_points.iter_mut() {
+            let cp: Mat4x1 = rotation_matrix * vec3_to_mat4x1(control_point);
+            *control_point = cp.xyz();
+        }
+        
+        for control_point_srt in self.control_points_srt.iter_mut() {
+            let cp: Mat4x1 = rotation_matrix * vec3_to_mat4x1(control_point_srt);
+            *control_point_srt = cp.xyz();
         }
 
-        for v in &mut self.vertices {
-            let vt = rotation_matrix * v.to_homogeneous();
-            *v = vt.xyz();
+        for vertex in self.vertices.iter_mut(){
+            let vt: Mat4x1 = rotation_matrix * vec3_to_mat4x1(vertex);
+            *vertex = vt.xyz();
+        }
+
+        for vertex_srt in self.vertices_srt.iter_mut(){
+            let vt: Mat4x1 = rotation_matrix * vec3_to_mat4x1(vertex_srt);
+            *vertex_srt = vt.xyz();
         }
     }
 
@@ -345,14 +431,83 @@ impl Object {
             0.0, 0.0, 0.0, 1.0,
         );
 
-        for p in &mut self.control_points {
-            let v = rotation_matrix * p.to_homogeneous();
-            *p = v.xyz();
+        for control_point in self.control_points.iter_mut() {
+            let cp: Mat4x1 = rotation_matrix * vec3_to_mat4x1(control_point);
+            *control_point = cp.xyz();
         }
 
-        for v in &mut self.vertices {
-            let vt = rotation_matrix * v.to_homogeneous();
-            *v = vt.xyz();
+        for control_point_srt in self.control_points_srt.iter_mut() {
+            let cp: Mat4x1 = rotation_matrix * vec3_to_mat4x1(control_point_srt);
+            *control_point_srt = cp.xyz();
+        }
+
+        for vertex in self.vertices.iter_mut(){
+            let vt: Mat4x1 = rotation_matrix * vec3_to_mat4x1(vertex);
+            *vertex = vt.xyz();
+        }
+
+        for vertex_srt in self.vertices_srt.iter_mut(){
+            let vt: Mat4x1 = rotation_matrix * vec3_to_mat4x1(vertex_srt);
+            *vertex_srt = vt.xyz();
+        }
+    }
+
+    //--------------------------------------------------------------------------------
+    // Outros métodos
+    //--------------------------------------------------------------------------------
+
+    pub fn calc_centroid(&self) -> Vec3 {
+        let mut centroid = Vec3::zeros();
+        for p in &self.control_points {
+            centroid += *p;
+        }
+        centroid / self.control_points.len() as f32
+    }
+
+    pub fn smooth_z(&mut self, iterations: usize) {
+        for _ in 0..iterations {
+            let mut new_vertices = self.vertices.clone();
+
+            for i in 1..(self.resi - 1) {
+                for j in 1..(self.resj - 1) {
+                    let idx = i * self.resj + j;
+                    let neighbors = [
+                        self.vertices[(i - 1) * self.resj + j],
+                        self.vertices[(i + 1) * self.resj + j],
+                        self.vertices[i * self.resj + (j - 1)],
+                        self.vertices[i * self.resj + (j + 1)],
+                    ];
+
+                    let avg_z = neighbors.iter().map(|v| v.z).sum::<f32>() / neighbors.len() as f32;
+                    new_vertices[idx].z = avg_z;
+                }
+            }
+
+            self.vertices = new_vertices;
+        }
+    }
+
+    /// Suaviza as coordenadas z dos pontos de controle.
+    fn smooth_control_points(&mut self, iterations: usize) {
+        for _ in 0..iterations {
+            let mut new_control_points = self.control_points.clone();
+
+            for i in 1..(self.ni - 1) {
+                for j in 1..(self.nj - 1) {
+                    let idx = i * (self.nj + 1) + j;
+                    let neighbors = [
+                        self.control_points[(i - 1) * (self.nj + 1) + j],
+                        self.control_points[(i + 1) * (self.nj + 1) + j],
+                        self.control_points[i * (self.nj + 1) + (j - 1)],
+                        self.control_points[i * (self.nj + 1) + (j + 1)],
+                    ];
+
+                    let avg_z = neighbors.iter().map(|v| v.z).sum::<f32>() / neighbors.len() as f32;
+                    new_control_points[idx].z = avg_z;
+                }
+            }
+
+            self.control_points = new_control_points;
         }
     }
 }

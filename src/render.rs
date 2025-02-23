@@ -34,7 +34,7 @@ pub struct Render {
     camera: Camera,
     window: Window,
     viewport: Viewport,
-    m_sru_srt: Mat4,
+    pub m_sru_srt: Mat4,
 }
 
 impl Render {

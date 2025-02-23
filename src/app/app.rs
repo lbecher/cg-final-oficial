@@ -1,12 +1,12 @@
 use eframe::{App as EguiApp, Frame};
 use eframe::emath;
-use eframe::egui::{CentralPanel, Context, SidePanel, TopBottomPanel, Ui, Vec2, Sense,
-    pos2, Color32, Grid, Pos2, Rect, Shape, Stroke, Widget, Window};
+use eframe::egui::{pos2, style, CentralPanel, Color32, Context, Grid, Pos2, Rect, Sense, Shape, SidePanel, Stroke, TopBottomPanel, Ui, Vec2, Widget, Window};
 use eframe::epaint::{self, CubicBezierShape, PathShape, QuadraticBezierShape};
 use crate::app::vector_input::*;
 use crate::constants::*;
 use crate::object::Object;
 use crate::render::Render;
+use crate::types::*;
 
 pub struct App {
     objects: Vec<Object>,
@@ -20,7 +20,7 @@ pub struct App {
 
     l: VectorInputData,
 
-    control_points: Vec<Pos2>,
+    control_points: Vec<Vec3>,
     degree: usize,
 
     theme: Theme,
@@ -28,11 +28,19 @@ pub struct App {
 
 impl Default for App {
     fn default() -> Self {
+        let render = Render::new();
+
+        let mut objects = Vec::new();
+        objects.push(Object::new(3, 3, 3, 3, 6, 6, 3, &render.m_sru_srt));
+        objects[0].scale(100.0);
+        println!("CP: {:?}", objects[0].control_points);
+        println!("CP_SRT: {:?}", objects[0].control_points_srt);
+
         Self {
-            objects: vec![Object::new(100, 100, 3, 3, 200, 200)],
+            objects,
             selected_object: Some(0),
 
-            render: Render::new(),
+            render,
 
             vrp: VectorInputData::new(0.0, 0.0, 0.0),
             p: VectorInputData::default(),
@@ -40,9 +48,9 @@ impl Default for App {
             l: VectorInputData::default(),
 
             control_points: vec![
-                Pos2::new(100.0, 100.0),
-                Pos2::new(200.0, 200.0),
-                Pos2::new(300.0, 100.0),
+                Vec3::new(100.0, 100.0, 0.0),
+                Vec3::new(200.0, 200.0, 0.0),
+                Vec3::new(300.0, 100.0, 0.0),
             ],
             degree: 3,
 
@@ -53,11 +61,6 @@ impl Default for App {
 
 impl EguiApp for App {
     fn update(&mut self, ctx: &Context, _frame: &mut Frame) {
-        TopBottomPanel::top("menu_bar")
-            .show(ctx, |ui| {
-                self.menu_bar_content(ui);
-            });
-
         SidePanel::right("side_panel")
             .exact_width(GUI_SIDEBAR_WIDTH)
             .resizable(false)
@@ -75,16 +78,12 @@ impl EguiApp for App {
 }
 
 impl App {
-    pub fn menu_bar_content(&mut self, ui: &mut Ui) {
+    pub fn side_panel_content(&mut self, ui: &mut Ui) {
         ui.horizontal( |ui| {
             ui.label("Tema:");
             ui.radio_value(&mut self.theme, Theme::Light, "Claro");
             ui.radio_value(&mut self.theme, Theme::Dark, "Escuro");
         });
-    }
-
-    pub fn side_panel_content(&mut self, ui: &mut Ui) {
-        ui.label("Side panel");
 
         ui.collapsing("Câmera", |ui| {
             vector_input(ui, "VRP (posição da câmera)", &mut self.vrp);
@@ -100,54 +99,54 @@ impl App {
     pub fn central_panel_content(&mut self, ui: &mut Ui) {
         let (response, painter) =
             ui.allocate_painter(Vec2::new(GUI_VIEWPORT_WIDTH, GUI_VIEWPORT_HEIGHT), Sense::hover());
-
         let to_screen = emath::RectTransform::from_to(
             Rect::from_min_size(Pos2::ZERO, response.rect.size()),
             response.rect,
         );
+    
+        if let Some(idx) = self.selected_object {
+            let m_sru_srt: Mat4 = self.render.m_sru_srt.clone();
+            let m_srt_sru: Mat4 = m_sru_srt.try_inverse().unwrap(); //.unwrap_or_else(Mat4::identity);
 
-        let control_point_radius = 2.0;
+            let control_point_radius = 2.0;
+            let control_points_srt: Vec<Vec3> = self.objects[idx].control_points_srt.clone();
+            let control_points: &mut Vec<Vec3> = &mut self.objects[idx].control_points;
 
-        let control_point_shapes: Vec<Shape> = self
-            .control_points
-            .iter_mut()
-            .enumerate()
-            .take(self.degree)
-            .map(|(i, point)| {
+            let mut dragged = false;
+            let mut shapes = Vec::new();
+
+            for (i, control_point) in control_points_srt.iter().enumerate() {
+                let mut point = pos2(control_point.x, control_point.y);
                 let size = Vec2::splat(2.0 * control_point_radius);
 
-                let point_in_screen = to_screen.transform_pos(*point);
+                let point_in_screen = to_screen.transform_pos(point);
                 let point_rect = Rect::from_center_size(point_in_screen, size);
                 let point_id = response.id.with(i);
                 let point_response = ui.interact(point_rect, point_id, Sense::drag());
 
-                *point += point_response.drag_delta();
-                *point = to_screen.from().clamp(*point);
+                if point_response.dragged() {
+                    let drag_delta: Vec2 = point_response.drag_delta();
+                    let drag_delta_sru: Mat4x1 = m_srt_sru * Mat4x1::new(drag_delta.x, drag_delta.y, 0.0, 1.0);
 
-                let point_in_screen = to_screen.transform_pos(*point);
-                let stroke = Stroke::new(1.0, Color32::RED);
+                    point += drag_delta;
+                    control_points[i] += drag_delta_sru.xyz();
 
-                Shape::circle_filled(point_in_screen, control_point_radius, Color32::RED)
-            })
-            .collect();
+                    dragged = true;
+                }
 
-        let points_in_screen: Vec<Pos2> = self
-            .control_points
-            .iter()
-            .take(self.degree)
-            .map(|p| to_screen * *p)
-            .collect();
+                let point_in_screen = to_screen.transform_pos(point);
+                shapes.push(Shape::circle_filled(point_in_screen, control_point_radius, Color32::RED));
+            }
 
-        // Desenhar arestas entre os pontos de controle
-        let edge_shapes: Vec<Shape> = points_in_screen
-            .windows(2)
-            .map(|w| {
-                Shape::line_segment([w[0], w[1]], Stroke::new(1.0, Color32::WHITE))
-            })
-            .collect();
+            painter.extend(shapes);
 
-        painter.extend(control_point_shapes);
-        painter.extend(edge_shapes);
+            if dragged {
+                self.objects[idx].calc_mesh();
+                self.objects[idx].calc_centroid();
+                self.objects[idx].calc_srt_convertions(&m_sru_srt);
+                println!("MOD_CP: {:?}", self.objects[idx].control_points_srt);
+            }
+        }
     }
 }
 
