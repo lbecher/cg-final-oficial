@@ -245,11 +245,6 @@ impl Object {
             let final_vertices = arc_vertices.lock().unwrap();
             self.vertices.copy_from_slice(&final_vertices);
         }
-
-        // Suavizar as coordenadas z dos vértices se o número de iterações for maior que zero
-        if self.smoothing_iterations > 0 {
-            self.smooth_z(self.smoothing_iterations);
-        }
     }
 
     /// Gera as faces da malha.
@@ -269,19 +264,26 @@ impl Object {
 
     /// Gera as conversões dos pontos de controle e vértices para o sistema de referência da tela.
     pub fn calc_srt_convertions(&mut self, m_sru_srt: &Mat4) {
-        for (i, control_point) in self.control_points.iter().enumerate() {
-            let mut control_point_srt: Mat4x1 = m_sru_srt * vec3_to_mat4x1(control_point);
-            control_point_srt.x /= control_point_srt.w;
-            control_point_srt.y /= control_point_srt.w;
-            self.control_points_srt[i] = control_point_srt.xyz();
-        }
-
-        for (i, vertex) in self.vertices.iter().enumerate() {
-            let mut vertex_srt: Mat4x1 = m_sru_srt * vec3_to_mat4x1(vertex);
-            vertex_srt.x /= vertex_srt.w;
-            vertex_srt.y /= vertex_srt.w;
-            self.vertices_srt[i] = vertex_srt.xyz();
-        }
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                // Calcula os pontos de controle no sistema de referência da tela
+                for (i, control_point) in self.control_points.iter().enumerate() {
+                    let mut control_point_srt: Mat4x1 = m_sru_srt * vec3_to_mat4x1(control_point);
+                    control_point_srt.x /= control_point_srt.w;
+                    control_point_srt.y /= control_point_srt.w;
+                    self.control_points_srt[i] = control_point_srt.xyz();
+                }
+            });  
+            s.spawn(|| {
+                // Calcilando os vértices no sistema de referência da tela
+                for (i, vertex) in self.vertices.iter().enumerate() {
+                    let mut vertex_srt: Mat4x1 = m_sru_srt * vec3_to_mat4x1(vertex);
+                    vertex_srt.x /= vertex_srt.w;
+                    vertex_srt.y /= vertex_srt.w;
+                    self.vertices_srt[i] = vertex_srt.xyz();
+                }
+            });
+        });
     }
 
     /// Retorna slice imutável para vértices da malha
@@ -305,26 +307,37 @@ impl Object {
             0.0, 0.0, 1.0, dz,
             0.0, 0.0, 0.0, 1.0,
         );
-
-        for control_point in self.control_points.iter_mut() {
-            let cp: Mat4x1 = translation_matrix * vec3_to_mat4x1(control_point);
-            *control_point = cp.xyz();
-        }
-
-        for control_point_srt in self.control_points_srt.iter_mut() {
-            let cp: Mat4x1 = translation_matrix * vec3_to_mat4x1(control_point_srt);
-            *control_point_srt = cp.xyz();
-        }
-
-        for vertex in self.vertices.iter_mut(){
-            let vt: Mat4x1 = translation_matrix * vec3_to_mat4x1(vertex);
-            *vertex = vt.xyz();
-        }
-
-        for vertex_srt in self.vertices_srt.iter_mut(){
-            let vt: Mat4x1 = translation_matrix * vec3_to_mat4x1(vertex_srt);
-            *vertex_srt = vt.xyz();
-        }
+        
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                // Alterar os pontos de controle
+                for control_point in &mut self.control_points {
+                    let cp: Mat4x1 = translation_matrix * vec3_to_mat4x1(control_point);
+                    *control_point = cp.xyz();
+                }
+            });
+            s.spawn(|| {
+                // Alterar os pontos de controle transformados
+                for control_point_srt in &mut self.control_points_srt {
+                    let cp: Mat4x1 = translation_matrix * vec3_to_mat4x1(control_point_srt);
+                    *control_point_srt = cp.xyz();
+                }
+            });
+            s.spawn(|| {
+                // Alterar os vértices
+                for vertex in &mut self.vertices {
+                    let vt: Mat4x1 = translation_matrix * vec3_to_mat4x1(vertex);
+                    *vertex = vt.xyz();
+                }
+            });
+            s.spawn(|| {
+                // Alterar os vértices transformados
+                for vertex_srt in &mut self.vertices_srt {
+                    let vt: Mat4x1 = translation_matrix * vec3_to_mat4x1(vertex_srt);
+                    *vertex_srt = vt.xyz();
+                }
+            });
+        });
     }
 
     pub fn scale(&mut self, scale: f32) {
@@ -335,25 +348,36 @@ impl Object {
             0.0, 0.0, 0.0, 1.0,
         );
 
-        for control_point in self.control_points.iter_mut() {
-            let cp: Mat4x1 = scale_matrix * vec3_to_mat4x1(control_point);
-            *control_point = cp.xyz();
-        }
-
-        for control_point_srt in self.control_points_srt.iter_mut() {
-            let cp: Mat4x1 = scale_matrix * vec3_to_mat4x1(control_point_srt);
-            *control_point_srt = cp.xyz();
-        }
-
-        for vertex in self.vertices.iter_mut(){
-            let vt: Mat4x1 = scale_matrix * vec3_to_mat4x1(vertex);
-            *vertex = vt.xyz();
-        }
-
-        for vertex_srt in self.vertices_srt.iter_mut(){
-            let vt: Mat4x1 = scale_matrix * vec3_to_mat4x1(vertex_srt);
-            *vertex_srt = vt.xyz();
-        }
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                // Alterar os pontos de controle
+                for control_point in &mut self.control_points {
+                    let cp: Mat4x1 = scale_matrix * vec3_to_mat4x1(control_point);
+                    *control_point = cp.xyz();
+                }
+            });
+            s.spawn(|| {
+                // Alterar os pontos de controle transformados
+                for control_point_srt in &mut self.control_points_srt {
+                    let cp: Mat4x1 = scale_matrix * vec3_to_mat4x1(control_point_srt);
+                    *control_point_srt = cp.xyz();
+                }
+            });
+            s.spawn(|| {
+                // Alterar os vértices
+                for vertex in &mut self.vertices {
+                    let vt: Mat4x1 = scale_matrix * vec3_to_mat4x1(vertex);
+                    *vertex = vt.xyz();
+                }
+            });
+            s.spawn(|| {
+                // Alterar os vértices transformados
+                for vertex_srt in &mut self.vertices_srt {
+                    let vt: Mat4x1 = scale_matrix * vec3_to_mat4x1(vertex_srt);
+                    *vertex_srt = vt.xyz();
+                }
+            });
+        });
     }
 
     pub fn rotate_x(&mut self, angle: f32) {
@@ -367,25 +391,36 @@ impl Object {
             0.0, 0.0, 0.0, 1.0,
         );
 
-        for control_point in self.control_points.iter_mut() {
-            let cp: Mat4x1 = rotation_matrix * vec3_to_mat4x1(control_point);
-            *control_point = cp.xyz();
-        }
-
-        for control_point_srt in self.control_points_srt.iter_mut() {
-            let cp: Mat4x1 = rotation_matrix * vec3_to_mat4x1(control_point_srt);
-            *control_point_srt = cp.xyz();
-        }
-
-        for vertex in self.vertices.iter_mut(){
-            let vt: Mat4x1 = rotation_matrix * vec3_to_mat4x1(vertex);
-            *vertex = vt.xyz();
-        }
-
-        for vertex_srt in self.vertices_srt.iter_mut(){
-            let vt: Mat4x1 = rotation_matrix * vec3_to_mat4x1(vertex_srt);
-            *vertex_srt = vt.xyz();
-        }
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                // Rotacionar os pontos de controle
+                for control_point in &mut self.control_points {
+                    let cp: Mat4x1 = rotation_matrix * vec3_to_mat4x1(control_point);
+                    *control_point = cp.xyz();
+                }
+            });
+            s.spawn(|| {
+                // Rotacionar os pontos de controle transformados
+                for control_point_srt in &mut self.control_points_srt {
+                    let cp: Mat4x1 = rotation_matrix * vec3_to_mat4x1(control_point_srt);
+                    *control_point_srt = cp.xyz();
+                }
+            });
+            s.spawn(|| {
+                // Rotacionar os vértices
+                for vertex in &mut self.vertices {
+                    let vt: Mat4x1 = rotation_matrix * vec3_to_mat4x1(vertex);
+                    *vertex = vt.xyz();
+                }
+            });
+            s.spawn(|| {
+                // Rotacionar os vértices transformados
+                for vertex_srt in &mut self.vertices_srt {
+                    let vt: Mat4x1 = rotation_matrix * vec3_to_mat4x1(vertex_srt);
+                    *vertex_srt = vt.xyz();
+                }
+            });
+        });
     }
 
     pub fn rotate_y(&mut self, angle: f32) {
@@ -399,25 +434,36 @@ impl Object {
             0.0, 0.0, 0.0, 1.0,
         );
 
-        for control_point in self.control_points.iter_mut() {
-            let cp: Mat4x1 = rotation_matrix * vec3_to_mat4x1(control_point);
-            *control_point = cp.xyz();
-        }
-        
-        for control_point_srt in self.control_points_srt.iter_mut() {
-            let cp: Mat4x1 = rotation_matrix * vec3_to_mat4x1(control_point_srt);
-            *control_point_srt = cp.xyz();
-        }
-
-        for vertex in self.vertices.iter_mut(){
-            let vt: Mat4x1 = rotation_matrix * vec3_to_mat4x1(vertex);
-            *vertex = vt.xyz();
-        }
-
-        for vertex_srt in self.vertices_srt.iter_mut(){
-            let vt: Mat4x1 = rotation_matrix * vec3_to_mat4x1(vertex_srt);
-            *vertex_srt = vt.xyz();
-        }
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                // Rotacionar os pontos de controle
+                for control_point in &mut self.control_points {
+                    let cp: Mat4x1 = rotation_matrix * vec3_to_mat4x1(control_point);
+                    *control_point = cp.xyz();
+                }
+            });
+            s.spawn(|| {
+                // Rotacionar os pontos de controle transformados
+                for control_point_srt in &mut self.control_points_srt {
+                    let cp: Mat4x1 = rotation_matrix * vec3_to_mat4x1(control_point_srt);
+                    *control_point_srt = cp.xyz();
+                }
+            });
+            s.spawn(|| {
+                // Rotacionar os vértices
+                for vertex in &mut self.vertices {
+                    let vt: Mat4x1 = rotation_matrix * vec3_to_mat4x1(vertex);
+                    *vertex = vt.xyz();
+                }
+            });
+            s.spawn(|| {
+                // Rotacionar os vértices transformados
+                for vertex_srt in &mut self.vertices_srt {
+                    let vt: Mat4x1 = rotation_matrix * vec3_to_mat4x1(vertex_srt);
+                    *vertex_srt = vt.xyz();
+                }
+            });
+        });
     }
 
     pub fn rotate_z(&mut self, angle: f32) {
@@ -431,25 +477,36 @@ impl Object {
             0.0, 0.0, 0.0, 1.0,
         );
 
-        for control_point in self.control_points.iter_mut() {
-            let cp: Mat4x1 = rotation_matrix * vec3_to_mat4x1(control_point);
-            *control_point = cp.xyz();
-        }
-
-        for control_point_srt in self.control_points_srt.iter_mut() {
-            let cp: Mat4x1 = rotation_matrix * vec3_to_mat4x1(control_point_srt);
-            *control_point_srt = cp.xyz();
-        }
-
-        for vertex in self.vertices.iter_mut(){
-            let vt: Mat4x1 = rotation_matrix * vec3_to_mat4x1(vertex);
-            *vertex = vt.xyz();
-        }
-
-        for vertex_srt in self.vertices_srt.iter_mut(){
-            let vt: Mat4x1 = rotation_matrix * vec3_to_mat4x1(vertex_srt);
-            *vertex_srt = vt.xyz();
-        }
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                // Rotacionar os pontos de controle
+                for control_point in &mut self.control_points {
+                    let cp: Mat4x1 = rotation_matrix * vec3_to_mat4x1(control_point);
+                    *control_point = cp.xyz();
+                }
+            });
+            s.spawn(|| {
+                // Rotacionar os pontos de controle transformados
+                for control_point_srt in &mut self.control_points_srt {
+                    let cp: Mat4x1 = rotation_matrix * vec3_to_mat4x1(control_point_srt);
+                    *control_point_srt = cp.xyz();
+                }
+            });
+            s.spawn(|| {
+                // Rotacionar os vértices
+                for vertex in &mut self.vertices {
+                    let vt: Mat4x1 = rotation_matrix * vec3_to_mat4x1(vertex);
+                    *vertex = vt.xyz();
+                }
+            });
+            s.spawn(|| {
+                // Rotacionar os vértices transformados
+                for vertex_srt in &mut self.vertices_srt {
+                    let vt: Mat4x1 = rotation_matrix * vec3_to_mat4x1(vertex_srt);
+                    *vertex_srt = vt.xyz();
+                }
+            });
+        });
     }
 
     //--------------------------------------------------------------------------------
@@ -462,29 +519,6 @@ impl Object {
             centroid += *p;
         }
         centroid / self.control_points.len() as f32
-    }
-
-    pub fn smooth_z(&mut self, iterations: usize) {
-        for _ in 0..iterations {
-            let mut new_vertices = self.vertices.clone();
-
-            for i in 1..(self.resi - 1) {
-                for j in 1..(self.resj - 1) {
-                    let idx = i * self.resj + j;
-                    let neighbors = [
-                        self.vertices[(i - 1) * self.resj + j],
-                        self.vertices[(i + 1) * self.resj + j],
-                        self.vertices[i * self.resj + (j - 1)],
-                        self.vertices[i * self.resj + (j + 1)],
-                    ];
-
-                    let avg_z = neighbors.iter().map(|v| v.z).sum::<f32>() / neighbors.len() as f32;
-                    new_vertices[idx].z = avg_z;
-                }
-            }
-
-            self.vertices = new_vertices;
-        }
     }
 
     /// Suaviza as coordenadas z dos pontos de controle.
