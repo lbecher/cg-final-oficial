@@ -1,7 +1,6 @@
 use eframe::{App as EguiApp, Frame};
 use eframe::emath;
-use eframe::egui::{pos2, style, CentralPanel, Color32, Context, Grid, Pos2, Rect, Sense, Shape, SidePanel, Stroke, TopBottomPanel, Ui, Vec2, Widget, Window};
-use eframe::epaint::{self, CubicBezierShape, PathShape, QuadraticBezierShape};
+use eframe::egui::{pos2, CentralPanel, Color32, Context, Pos2, Rect, Sense, Shape, SidePanel, Ui, Vec2};
 use crate::app::vector_input::*;
 use crate::constants::*;
 use crate::object::Object;
@@ -20,7 +19,7 @@ pub struct App {
 
     l: VectorInputData,
 
-    control_points: Vec<Vec3>,
+    _control_points: Vec<Vec3>,
 
     theme: Theme,
 }
@@ -48,7 +47,7 @@ impl Default for App {
             y: VectorInputData::new(0.0, 1.0, 0.0),
             l: VectorInputData::default(),
 
-            control_points: vec![
+            _control_points: vec![
                 Vec3::new(100.0, 100.0, 0.0),
                 Vec3::new(200.0, 200.0, 0.0),
                 Vec3::new(300.0, 100.0, 0.0),
