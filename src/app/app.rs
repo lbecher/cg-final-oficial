@@ -32,6 +32,8 @@ impl Default for App {
         let mut objects = Vec::new();
         objects.push(Object::new(3, 3, 3, 3, 6, 6, 3, &render.m_sru_srt));
         objects[0].scale(100.0);
+        objects[0].translate(&Mat4x1::new(300.0, 200.0, 0.0, 1.0), &render.m_sru_srt);
+        objects[0].calc_centroid();
         println!("CP: {:?}", objects[0].control_points);
         println!("CP_SRT: {:?}", objects[0].control_points_srt);
 
@@ -92,6 +94,13 @@ impl App {
         ui.collapsing("Iluminação", |ui| {
             vector_input(ui, "L (posição da lâmpada)", &mut self.l);
         });
+
+        if ui.button("Rodar").clicked() {
+            if let Some(idx) = self.selected_object {
+                self.objects[idx].rotate_z(0.1, &self.render.m_sru_srt);
+                println!("CENT: {:?}", self.objects[idx].centroid);
+            }
+        }
     }
 
     pub fn central_panel_content(&mut self, ui: &mut Ui) {

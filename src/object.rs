@@ -345,6 +345,9 @@ impl Object {
                 }
             });
         });
+
+        
+        self.calc_centroid();
     }
 
     /// Aplica a transformação de escala nos pontos de controle e vértices
@@ -386,6 +389,8 @@ impl Object {
                 }
             });
         });
+
+        self.calc_centroid();
     }
 
     /// Aplica a transformação de rotação em X nos pontos de controle e vértices
@@ -440,6 +445,8 @@ impl Object {
                 }
             });
         });
+
+        self.calc_centroid();
     }
 
     /// Aplica a transformação de rotação em Y nos pontos de controle e vértices
@@ -494,6 +501,8 @@ impl Object {
                 }
             });
         });
+
+        self.calc_centroid();
     }
 
     /// Aplica a transformação de rotação em Y nos pontos de controle e vértices
@@ -548,6 +557,8 @@ impl Object {
                 }
             });
         });
+
+        self.calc_centroid();
     }
 
 
@@ -556,12 +567,12 @@ impl Object {
     //--------------------------------------------------------------------------------
 
     /// Calcula o centroide dos pontos de controle
-    pub fn calc_centroid(&self) -> Vec3 {
+    pub fn calc_centroid(&mut self) {
         let mut centroid = Vec3::zeros();
         for p in &self.control_points {
             centroid += *p;
         }
-        centroid / self.control_points.len() as f32
+        self.centroid = centroid / self.control_points.len() as f32;
     }
 
     /// Suaviza as coordenadas z dos pontos de controle
