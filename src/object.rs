@@ -312,46 +312,23 @@ impl Object {
     /// Aplica a transformação de translação nos pontos de controle e vértices
     pub fn translate(&mut self, translation: &Mat4x1, m_sru_srt: &Mat4) {
         let sru_translation_matrix: Mat4 = self.gen_translation_matrix(translation);
-        let srt_translation: Mat4x1 = m_sru_srt * translation;
-        let srt_translation_matrix: Mat4 = self.gen_translation_matrix(&srt_translation);
-        
-        std::thread::scope(|s| {
-            s.spawn(|| {
-                // Transladar os pontos de controle
-                for control_point in &mut self.control_points {
-                    let cp: Mat4x1 = sru_translation_matrix * vec3_to_mat4x1(control_point);
-                    *control_point = cp.xyz();
-                }
-            });
-            s.spawn(|| {
-                // Transladar os pontos de controle no sistema de referência da tela
-                for control_point_srt in &mut self.control_points_srt {
-                    let cp: Mat4x1 = srt_translation_matrix * vec3_to_mat4x1(control_point_srt);
-                    *control_point_srt = cp.xyz();
-                }
-            });
-            s.spawn(|| {
-                // Transladar os vértices
-                for vertex in &mut self.vertices {
-                    let vt: Mat4x1 = sru_translation_matrix * vec3_to_mat4x1(vertex);
-                    *vertex = vt.xyz();
-                }
-            });
-            s.spawn(|| {
-                // Transladar os vértices no sistema de referência da tela
-                for vertex_srt in &mut self.vertices_srt {
-                    let vt: Mat4x1 = srt_translation_matrix * vec3_to_mat4x1(vertex_srt);
-                    *vertex_srt = vt.xyz();
-                }
-            });
-        });
 
-        
+        // Atualiza pontos de controle
+        for cp in &mut self.control_points {
+            *cp = (sru_translation_matrix * vec3_to_mat4x1(cp)).xyz();
+        }
+
+        // Atualiza vértices
+        for vt in &mut self.vertices {
+            *vt = (sru_translation_matrix * vec3_to_mat4x1(vt)).xyz();
+        }
+
         self.calc_centroid();
+        self.calc_srt_convertions(m_sru_srt);
     }
 
     /// Aplica a transformação de escala nos pontos de controle e vértices
-    pub fn scale(&mut self, scale: f32) {
+    pub fn scale(&mut self, scale: f32, m_sru_srt: &Mat4) {
         let scale_matrix: Mat4 = Mat4::new(
             scale, 0.0, 0.0, 0.0,
             0.0, scale, 0.0, 0.0,
@@ -359,38 +336,18 @@ impl Object {
             0.0, 0.0, 0.0, 1.0,
         );
 
-        std::thread::scope(|s| {
-            s.spawn(|| {
-                // Escala os pontos de controle
-                for control_point in &mut self.control_points {
-                    let cp: Mat4x1 = scale_matrix * vec3_to_mat4x1(control_point);
-                    *control_point = cp.xyz();
-                }
-            });
-            s.spawn(|| {
-                // Escala os pontos de controle no sistema de referência da tela
-                for control_point_srt in &mut self.control_points_srt {
-                    let cp: Mat4x1 = scale_matrix * vec3_to_mat4x1(control_point_srt);
-                    *control_point_srt = cp.xyz();
-                }
-            });
-            s.spawn(|| {
-                // Escala os vértices
-                for vertex in &mut self.vertices {
-                    let vt: Mat4x1 = scale_matrix * vec3_to_mat4x1(vertex);
-                    *vertex = vt.xyz();
-                }
-            });
-            s.spawn(|| {
-                // Escala os vértices no sistema de referência da tela
-                for vertex_srt in &mut self.vertices_srt {
-                    let vt: Mat4x1 = scale_matrix * vec3_to_mat4x1(vertex_srt);
-                    *vertex_srt = vt.xyz();
-                }
-            });
-        });
+        // Atualiza pontos de controle
+        for cp in &mut self.control_points {
+            *cp = (scale_matrix * vec3_to_mat4x1(cp)).xyz();
+        }
+
+        // Atualiza vértices
+        for vt in &mut self.vertices {
+            *vt = (scale_matrix * vec3_to_mat4x1(vt)).xyz();
+        }
 
         self.calc_centroid();
+        self.calc_srt_convertions(m_sru_srt);
     }
 
     /// Aplica a transformação de rotação em X nos pontos de controle e vértices
@@ -410,43 +367,22 @@ impl Object {
         let to_origin: Mat4 = self.gen_translation_matrix(&centroid);
         let to_centroid: Mat4 = self.gen_translation_matrix(&minus_centroid);
 
-        let srt_centroid: Mat4x1 = m_sru_srt * centroid;
-        let srt_minus_centroid: Mat4x1 = -srt_centroid;
-        let srt_to_origin: Mat4 = self.gen_translation_matrix(&srt_centroid);
-        let srt_to_centroid: Mat4 = self.gen_translation_matrix(&srt_minus_centroid);
-
-        std::thread::scope(|s| {
-            s.spawn(|| {
-                // Rotacionar os pontos de controle
-                for control_point in &mut self.control_points {
-                    let cp: Mat4x1 = to_centroid * (rotation_matrix * (to_origin * vec3_to_mat4x1(control_point)));
-                    *control_point = cp.xyz();
-                }
-            });
-            s.spawn(|| {
-                // Rotacionar os pontos de controle no sistema de referência da tela
-                for control_point_srt in &mut self.control_points_srt {
-                    let cp: Mat4x1 = srt_to_centroid * (rotation_matrix * (srt_to_origin * vec3_to_mat4x1(control_point_srt)));
-                    *control_point_srt = cp.xyz();
-                }
-            });
-            s.spawn(|| {
-                // Rotacionar os vértices
-                for vertex in &mut self.vertices {
-                    let vt: Mat4x1 = to_centroid * (rotation_matrix * (to_origin * vec3_to_mat4x1(vertex)));
-                    *vertex = vt.xyz();
-                }
-            });
-            s.spawn(|| {
-                // Rotacionar os vértices no sistema de referência da tela
-                for vertex_srt in &mut self.vertices_srt {
-                    let vt: Mat4x1 = srt_to_centroid * (rotation_matrix * (srt_to_origin * vec3_to_mat4x1(vertex_srt)));
-                    *vertex_srt = vt.xyz();
-                }
-            });
-        });
+        for control_point in &mut self.control_points {
+            let mut cp: Mat4x1 = to_centroid * vec3_to_mat4x1(control_point);
+            cp = rotation_matrix * cp;
+            cp = to_origin * cp;
+            *control_point = cp.xyz();
+        }
+        
+        for vertex in &mut self.vertices {
+            let mut vt: Mat4x1 = to_centroid * vec3_to_mat4x1(vertex);
+            vt = rotation_matrix * vt;
+            vt = to_origin * vt;
+            *vertex = vt.xyz();
+        }
 
         self.calc_centroid();
+        self.calc_srt_convertions(m_sru_srt);
     }
 
     /// Aplica a transformação de rotação em Y nos pontos de controle e vértices
@@ -466,43 +402,22 @@ impl Object {
         let to_origin: Mat4 = self.gen_translation_matrix(&centroid);
         let to_centroid: Mat4 = self.gen_translation_matrix(&minus_centroid);
 
-        let srt_centroid: Mat4x1 = m_sru_srt * centroid;
-        let srt_minus_centroid: Mat4x1 = -srt_centroid;
-        let srt_to_origin: Mat4 = self.gen_translation_matrix(&srt_centroid);
-        let srt_to_centroid: Mat4 = self.gen_translation_matrix(&srt_minus_centroid);
-
-        std::thread::scope(|s| {
-            s.spawn(|| {
-                // Rotacionar os pontos de controle
-                for control_point in &mut self.control_points {
-                    let cp: Mat4x1 = to_centroid * (rotation_matrix * (to_origin * vec3_to_mat4x1(control_point)));
-                    *control_point = cp.xyz();
-                }
-            });
-            s.spawn(|| {
-                // Rotacionar os pontos de controle no sistema de referência da tela
-                for control_point_srt in &mut self.control_points_srt {
-                    let cp: Mat4x1 = srt_to_centroid * (rotation_matrix * (srt_to_origin * vec3_to_mat4x1(control_point_srt)));
-                    *control_point_srt = cp.xyz();
-                }
-            });
-            s.spawn(|| {
-                // Rotacionar os vértices
-                for vertex in &mut self.vertices {
-                    let vt: Mat4x1 = to_centroid * (rotation_matrix * (to_origin * vec3_to_mat4x1(vertex)));
-                    *vertex = vt.xyz();
-                }
-            });
-            s.spawn(|| {
-                // Rotacionar os vértices no sistema de referência da tela
-                for vertex_srt in &mut self.vertices_srt {
-                    let vt: Mat4x1 = srt_to_centroid * (rotation_matrix * (srt_to_origin * vec3_to_mat4x1(vertex_srt)));
-                    *vertex_srt = vt.xyz();
-                }
-            });
-        });
+        for control_point in &mut self.control_points {
+            let mut cp: Mat4x1 = to_centroid * vec3_to_mat4x1(control_point);
+            cp = rotation_matrix * cp;
+            cp = to_origin * cp;
+            *control_point = cp.xyz();
+        }
+        
+        for vertex in &mut self.vertices {
+            let mut vt: Mat4x1 = to_centroid * vec3_to_mat4x1(vertex);
+            vt = rotation_matrix * vt;
+            vt = to_origin * vt;
+            *vertex = vt.xyz();
+        }
 
         self.calc_centroid();
+        self.calc_srt_convertions(m_sru_srt);
     }
 
     /// Aplica a transformação de rotação em Y nos pontos de controle e vértices
@@ -521,44 +436,23 @@ impl Object {
         let minus_centroid: Mat4x1 = -centroid;
         let to_origin: Mat4 = self.gen_translation_matrix(&centroid);
         let to_centroid: Mat4 = self.gen_translation_matrix(&minus_centroid);
-
-        let srt_centroid: Mat4x1 = m_sru_srt * centroid;
-        let srt_minus_centroid: Mat4x1 = -srt_centroid;
-        let srt_to_origin: Mat4 = self.gen_translation_matrix(&srt_centroid);
-        let srt_to_centroid: Mat4 = self.gen_translation_matrix(&srt_minus_centroid);
-
-        std::thread::scope(|s| {
-            s.spawn(|| {
-                // Rotacionar os pontos de controle
-                for control_point in &mut self.control_points {
-                    let cp: Mat4x1 = to_centroid * (rotation_matrix * (to_origin * vec3_to_mat4x1(control_point)));
-                    *control_point = cp.xyz();
-                }
-            });
-            s.spawn(|| {
-                // Rotacionar os pontos de controle no sistema de referência da tela
-                for control_point_srt in &mut self.control_points_srt {
-                    let cp: Mat4x1 = srt_to_centroid * (rotation_matrix * (srt_to_origin * vec3_to_mat4x1(control_point_srt)));
-                    *control_point_srt = cp.xyz();
-                }
-            });
-            s.spawn(|| {
-                // Rotacionar os vértices
-                for vertex in &mut self.vertices {
-                    let vt: Mat4x1 = to_centroid * (rotation_matrix * (to_origin * vec3_to_mat4x1(vertex)));
-                    *vertex = vt.xyz();
-                }
-            });
-            s.spawn(|| {
-                // Rotacionar os vértices no sistema de referência da tela
-                for vertex_srt in &mut self.vertices_srt {
-                    let vt: Mat4x1 = srt_to_centroid * (rotation_matrix * (srt_to_origin * vec3_to_mat4x1(vertex_srt)));
-                    *vertex_srt = vt.xyz();
-                }
-            });
-        });
+        
+        for control_point in &mut self.control_points {
+            let mut cp: Mat4x1 = to_centroid * vec3_to_mat4x1(control_point);
+            cp = rotation_matrix * cp;
+            cp = to_origin * cp;
+            *control_point = cp.xyz();
+        }
+        
+        for vertex in &mut self.vertices {
+            let mut vt: Mat4x1 = to_centroid * vec3_to_mat4x1(vertex);
+            vt = rotation_matrix * vt;
+            vt = to_origin * vt;
+            *vertex = vt.xyz();
+        }
 
         self.calc_centroid();
+        self.calc_srt_convertions(m_sru_srt);
     }
 
 
@@ -566,13 +460,28 @@ impl Object {
     // Outros métodos
     //--------------------------------------------------------------------------------
 
-    /// Calcula o centroide dos pontos de controle
+    /// Calcula o centroide através do box envolvente dos pontos de controle
     pub fn calc_centroid(&mut self) {
-        let mut centroid = Vec3::zeros();
-        for p in &self.control_points {
-            centroid += *p;
+        if self.control_points.is_empty() {
+            self.centroid = Vec3::zeros();
+            return;
         }
-        self.centroid = centroid / self.control_points.len() as f32;
+        let first = self.control_points[0];
+        let mut min = first;
+        let mut max = first;
+        for p in &self.control_points {
+            min.x = p.x.min(min.x);
+            min.y = p.y.min(min.y);
+            min.z = p.z.min(min.z);
+            max.x = p.x.max(max.x);
+            max.y = p.y.max(max.y);
+            max.z = p.z.max(max.z);
+        }
+        self.centroid = Vec3::new(
+            (min.x + max.x) / 2.0,
+            (min.y + max.y) / 2.0,
+            (min.z + max.z) / 2.0,
+        );
     }
 
     /// Suaviza as coordenadas z dos pontos de controle

@@ -31,7 +31,7 @@ impl Default for App {
 
         let mut objects = Vec::new();
         objects.push(Object::new(3, 3, 3, 3, 6, 6, 3, &render.m_sru_srt));
-        objects[0].scale(100.0);
+        objects[0].scale(40.0, &render.m_sru_srt);
         objects[0].translate(&Mat4x1::new(300.0, 200.0, 0.0, 1.0), &render.m_sru_srt);
         objects[0].calc_centroid();
         println!("CP: {:?}", objects[0].control_points);
