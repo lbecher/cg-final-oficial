@@ -1,6 +1,6 @@
 use eframe::{App as EguiApp, Frame};
 use eframe::emath;
-use eframe::egui::{pos2, CentralPanel, Color32, Context, Pos2, Rect, Sense, Shape, SidePanel, Ui, Vec2};
+use eframe::egui::{pos2, CentralPanel, Color32, ColorImage, Context, Pos2, Rect, Sense, Shape, SidePanel,  TextureId, TextureOptions, Ui, Vec2};
 use crate::app::vector_input::*;
 use crate::constants::*;
 use crate::object::Object;
@@ -12,6 +12,10 @@ pub struct App {
     selected_object: Option<usize>,
 
     render: Render,
+    image: ColorImage,
+
+    primary_color: [u8; 4],
+    secondary_color: [u8; 4],
 
     vrp: VectorInputData,
     p: VectorInputData,
@@ -28,10 +32,15 @@ impl Default for App {
     fn default() -> Self {
         let render = Render::new();
 
+        let buffer = render.buffer.clone();
+        let size = [render.buffer_width, render.buffer_height];
+        let image = ColorImage::from_rgba_premultiplied(size, &buffer);
+
         let mut objects = Vec::new();
-        objects.push(Object::new(3, 3, 3, 3, 6, 6, 3, &render.m_sru_srt));
+        objects.push(Object::new(3, 3, 6, 6, 3));
+        objects[0].calc_srt_convertions(&render.m_sru_srt);
         objects[0].scale(40.0, &render.m_sru_srt);
-        objects[0].translate(&Mat4x1::new(300.0, 200.0, 0.0, 1.0), &render.m_sru_srt);
+        objects[0].translate(&Vec3::new(300.0, 200.0, 0.0), &render.m_sru_srt);
         objects[0].calc_centroid();
         println!("CP: {:?}", objects[0].control_points);
         println!("CP_SRT: {:?}", objects[0].control_points_srt);
@@ -41,6 +50,10 @@ impl Default for App {
             selected_object: Some(0),
 
             render,
+            image,
+
+            primary_color: [0, 255, 0, 255],
+            secondary_color: [255, 0, 0, 255],
 
             vrp: VectorInputData::new(0.0, 0.0, 0.0),
             p: VectorInputData::default(),
@@ -77,11 +90,42 @@ impl EguiApp for App {
 }
 
 impl App {
+    pub fn redraw(&mut self) {
+        //let start = Instant::now();
+
+        self.render.clean_buffers();
+        for object in &mut self.objects {
+            let vertices = object.vertices.clone();
+            let vertices_srt = object.vertices_srt.clone();
+            let primary_edge_color = self.primary_color;
+            let secondary_edge_color = self.secondary_color;
+            let render = &mut self.render;
+            let faces = &mut object.faces;
+            render.render(&vertices, &vertices_srt, faces, primary_edge_color, secondary_edge_color);
+        }
+
+        let buffer = self.render.buffer.clone();
+        let size = [self.render.buffer_width, self.render.buffer_height];
+        self.image = ColorImage::from_rgba_premultiplied(size, &buffer);
+
+        //self.duration = start.elapsed();
+    }
+
     pub fn side_panel_content(&mut self, ui: &mut Ui) {
         ui.horizontal( |ui| {
             ui.label("Tema:");
             ui.radio_value(&mut self.theme, Theme::Light, "Claro");
             ui.radio_value(&mut self.theme, Theme::Dark, "Escuro");
+        });
+
+        ui.horizontal( |ui| {
+            ui.label("Cor primaria:");
+            ui.color_edit_button_srgba_unmultiplied(&mut self.primary_color);
+        });
+
+        ui.horizontal( |ui| {
+            ui.label("Cor secundaria:");
+            ui.color_edit_button_srgba_unmultiplied(&mut self.secondary_color);
         });
 
         ui.collapsing("Câmera", |ui| {
@@ -109,7 +153,17 @@ impl App {
             Rect::from_min_size(Pos2::ZERO, response.rect.size()),
             response.rect,
         );
-    
+
+        let name = "render";
+        let options = TextureOptions::default();
+        let texture = ui.ctx().load_texture(name, self.image.clone(), options);
+        let texture_id = TextureId::from(&texture);
+        let uv = Rect {
+            min: Pos2::new(0.0, 0.0),
+            max: Pos2::new(1.0, 1.0),
+        };
+        painter.image(texture_id, response.rect, uv, Color32::WHITE);
+
         if let Some(idx) = self.selected_object {
             let m_sru_srt: Mat4 = self.render.m_sru_srt.clone();
             let m_srt_sru: Mat4 = m_sru_srt.try_inverse().unwrap(); //.unwrap_or_else(Mat4::identity);
@@ -132,10 +186,10 @@ impl App {
 
                 if point_response.dragged() {
                     let drag_delta: Vec2 = point_response.drag_delta();
-                    let drag_delta_sru: Mat4x1 = m_srt_sru * Mat4x1::new(drag_delta.x, drag_delta.y, 0.0, 1.0);
+                    let drag_delta_sru = m_srt_sru * Mat4x1::new(drag_delta.x, drag_delta.y, 0.0, 1.0);
 
                     point += drag_delta;
-                    control_points[i] += drag_delta_sru.xyz();
+                    control_points[i] += mat4x1_to_vec3(&drag_delta_sru);
 
                     dragged = true;
                 }
@@ -150,6 +204,7 @@ impl App {
                 self.objects[idx].calc_mesh();
                 self.objects[idx].calc_centroid();
                 self.objects[idx].calc_srt_convertions(&m_sru_srt);
+                self.redraw();
             }
         }
     }
