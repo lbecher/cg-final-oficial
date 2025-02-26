@@ -1,8 +1,8 @@
 use ordered_float::OrderedFloat;
 use std::collections::BTreeMap;
 use std::f32::INFINITY;
-use crate::constants::*;
-use crate::object::Face;
+use crate::{constants::*, object};
+use crate::object::{Edge, Face, Object};
 use crate::types::*;
 
 
@@ -133,16 +133,19 @@ impl Render {
     /// Renderiza as faces de uma malha.
     pub fn render(
         &mut self,
-        vertices: &[Vec3],
-        vertices_srt: &[Vec3],
-        faces: &mut [Face],
+        object: &mut Object,
         primary_edge_color: [u8; 4],
         secondary_edge_color: [u8; 4],
     ) {
         match self.shader_type {
             ShaderType::Wireframe => {
-                self.calc_normal_test(vertices, faces, &self.camera);
-                self.fill_wireframe(vertices_srt, faces, primary_edge_color, secondary_edge_color);
+                let vertices = &object.vertices;
+                let vertices_srt = &object.vertices_srt;
+                let edges = &mut object.edges;
+                let faces = &object.faces;
+                self.calc_normal_test(vertices, edges, faces, &self.camera);
+                self.fill_wireframe(vertices_srt, faces);
+                self.edges_wireframe(vertices_srt, edges, primary_edge_color, secondary_edge_color);
             }
             ShaderType::Constant => {
                 todo!();
@@ -161,8 +164,6 @@ impl Render {
         &mut self,
         vertices_srt: &[Vec3],
         faces: &[Face],
-        primary_edge_color: [u8; 4],
-        secondary_edge_color: [u8; 4],
     ) {
         for face in faces.iter() {
             // Para cada face, calcula as interseções da varredura
@@ -189,17 +190,9 @@ impl Render {
 
                     let mut z: f32 = z_initial;
 
-                    // Obtém a cor da aresta de acordo com o teste da normal da face
-                    let edge_color = if face.visible {
-                        primary_edge_color
-                    } else {
-                        secondary_edge_color
-                    };
-
-                    // Preenche os pixels intermediários da scanline
                     for j in x_initial..=x_final {
                         let z_index = i * self.buffer_width + j;
-                        if z <= self.z_buffer[z_index] {
+                        if z > self.z_buffer[z_index] {
                             let color = [0, 0, 255, 255];
                             self.paint(i, j, color);
                             self.z_buffer[z_index] = z;
@@ -207,6 +200,64 @@ impl Render {
                         z += tz;
                     }
                 }
+            }
+        }
+    }
+
+    /// Pinta as arestas da malha com o algoritmo de Bresenham adaptado para 3D.
+    fn edges_wireframe(
+        &mut self,
+        vertices_srt: &[Vec3],
+        edges: &[Edge],
+        primary_edge_color: [u8; 4],
+        secondary_edge_color: [u8; 4],
+    ) { 
+        for edge in edges.iter() {
+            let start = vertices_srt[edge.vertices[0]];
+            let end = vertices_srt[edge.vertices[1]];
+            // Neste exemplo, tratamos todas como cor primária
+            if edge.visible {
+                self.bresenham_3d(start, end, primary_edge_color);
+            } else {
+                self.bresenham_3d(start, end, secondary_edge_color);
+            }
+        }
+    }
+
+    fn bresenham_3d(&mut self, start: Vec3, end: Vec3, color: [u8; 4]) {
+        let x0 = start.x as i32;
+        let y0 = end.x as i32;
+        let x1 = start.y as i32;
+        let y1 = end.y as i32;
+
+        let dx = (x1 - x0).abs();
+        let dy = (y1 - y0).abs();
+    
+        let sx = if x0 < x1 { 1 } else { -1 };
+        let sy = if y0 < y1 { 1 } else { -1 };
+    
+        let mut x = x0;
+        let mut y = y0;
+    
+        let mut err = dx - dy;
+    
+        loop {
+            self.paint(y as usize, x as usize, color);
+
+            if x == x1 && y == y1 {
+                break;
+            }
+    
+            let e2 = 2 * err;
+    
+            if e2 > -dy {
+                err -= dy;
+                x += sx;
+            }
+    
+            if e2 < dx {
+                err += dx;
+                y += sy;
             }
         }
     }
@@ -309,7 +360,7 @@ impl Render {
         }
 
         for (_, intersections) in intersections.iter_mut() {
-            intersections.sort();
+            intersections.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
         }
 
         intersections
@@ -318,10 +369,11 @@ impl Render {
     fn calc_normal_test(
         &self,
         vertices: &[Vec3],
-        faces: &mut [Face],
+        edges: &mut [Edge],
+        faces: &[Face],
         camera: &Camera,
     ) {
-        for face in faces.iter_mut() {
+        for face in faces.iter() {
             let a: Vec3 = vertices[face.vertices[0]];
             let b: Vec3 = vertices[face.vertices[1]];
             let c: Vec3 = vertices[face.vertices[2]];
@@ -337,7 +389,12 @@ impl Render {
             );
             let no: Vec3 = (camera.vrp - centroid).normalize();
 
-            face.visible = nn.dot(&no) > 0.0;
+            if nn.dot(&no) > 0.0 {
+                edges[face.edges[0]].visible = true;
+                edges[face.edges[1]].visible = true;
+                edges[face.edges[2]].visible = true;
+                edges[face.edges[3]].visible = true;
+            }
         }
     }
 }

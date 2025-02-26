@@ -4,14 +4,16 @@ use std::cmp::min;
 use crate::constants::*;
 use crate::types::*;
 
+#[derive(Debug)]
 pub struct Edge {
     pub vertices: [usize; 2],
+    pub visible: bool,
 }
 
+#[derive(Debug)]
 pub struct Face {
     pub vertices: [usize; 4],
     pub edges: [usize; 4],
-    pub visible: bool,
 }
 
 /// Estrutura para armazenar uma superfície BSpline.
@@ -38,9 +40,6 @@ pub struct Object {
 
     /// Centroide dos pontos de controle.
     pub centroid: Vec3,
-
-    /// Número de iterações de suavização das coordenadas z.
-    pub smoothing_iterations: u8,
 
     // TODO: Adicionar propriedades de cores
 }
@@ -89,12 +88,10 @@ impl Object {
             control_points_srt,
             vertices,
             vertices_srt,
-            edges: Vec::with_capacity(resj*(resi - 1) + resi*(resj - 1)),
-            faces: Vec::with_capacity((resi - 1) * (resj - 1)),
+            edges,
+            faces,
 
             centroid: Vec3::zeros(),
-
-            smoothing_iterations,
         };
 
         obj.calc_mesh();
@@ -270,10 +267,10 @@ impl Object {
                 // Para isso, vamos sempre adicionar as arestas da direita e de cima
                 // como novas arestas.
                 let cb_index = self.edges.len();
-                self.edges.push(Edge { vertices: [c_index, b_index] });
+                self.edges.push(Edge { vertices: [c_index, b_index], visible: false });
 
                 let dc_index = cb_index + 1;
-                self.edges.push(Edge { vertices: [d_index, c_index] });
+                self.edges.push(Edge { vertices: [d_index, c_index], visible: false });
 
                 // Já as arestas da esquerda e de baixo são adicionadas
                 // como novas caso estejam na posição inicial. Caso contrário,
@@ -281,7 +278,7 @@ impl Object {
                 let ab_index: usize;
                 if i == 0 {
                     ab_index = self.edges.len();
-                    self.edges.push(Edge { vertices: [a_index, b_index] });
+                    self.edges.push(Edge { vertices: [a_index, b_index], visible: false });
                 } else {
                     ab_index = self.faces[(i - 1) * (self.resj - 1) + j].edges[3];
                 };
@@ -289,7 +286,7 @@ impl Object {
                 let da_index: usize;
                 if j == 0 {
                     da_index = self.edges.len();
-                    self.edges.push(Edge { vertices: [d_index, a_index] });
+                    self.edges.push(Edge { vertices: [d_index, a_index], visible: false });
                 } else {
                     da_index = self.faces[i * (self.resj - 1) + (j - 1)].edges[2];
                 };
@@ -301,7 +298,6 @@ impl Object {
                 self.faces.push(Face {
                     vertices: [a_index, b_index, c_index, d_index],
                     edges: [da_index, ab_index, cb_index, dc_index],
-                    visible: true,
                 });
             }
         }

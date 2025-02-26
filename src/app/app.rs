@@ -37,13 +37,11 @@ impl Default for App {
         let image = ColorImage::from_rgba_premultiplied(size, &buffer);
 
         let mut objects = Vec::new();
-        objects.push(Object::new(3, 3, 6, 6, 3));
+        objects.push(Object::new(2, 2, 3, 3, 3));
         objects[0].calc_srt_convertions(&render.m_sru_srt);
         objects[0].scale(40.0, &render.m_sru_srt);
         objects[0].translate(&Vec3::new(300.0, 200.0, 0.0), &render.m_sru_srt);
         objects[0].calc_centroid();
-        println!("CP: {:?}", objects[0].control_points);
-        println!("CP_SRT: {:?}", objects[0].control_points_srt);
 
         Self {
             objects,
@@ -95,13 +93,10 @@ impl App {
 
         self.render.clean_buffers();
         for object in &mut self.objects {
-            let vertices = object.vertices.clone();
-            let vertices_srt = object.vertices_srt.clone();
             let primary_edge_color = self.primary_color;
             let secondary_edge_color = self.secondary_color;
             let render = &mut self.render;
-            let faces = &mut object.faces;
-            render.render(&vertices, &vertices_srt, faces, primary_edge_color, secondary_edge_color);
+            render.render(object, primary_edge_color, secondary_edge_color);
         }
 
         let buffer = self.render.buffer.clone();
@@ -141,7 +136,6 @@ impl App {
         if ui.button("Rodar").clicked() {
             if let Some(idx) = self.selected_object {
                 self.objects[idx].rotate_z(0.1, &self.render.m_sru_srt);
-                println!("CENT: {:?}", self.objects[idx].centroid);
             }
         }
     }
