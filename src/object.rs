@@ -303,18 +303,18 @@ impl Object {
         }
     }
 
-    /// Calcula o centroide através do box envolvente dos pontos de controle.
+    /// Calcula o centroide através do box envolvente.
     pub fn calc_centroid(&mut self) {
-        if self.control_points.is_empty() {
+        if self.vertices.is_empty() {
             self.centroid = Vec3::zeros();
             return;
         }
 
-        let first: Vec3 = self.control_points[0];
+        let first: Vec3 = self.vertices[0];
         let mut min: Vec3 = first;
         let mut max: Vec3 = first;
 
-        for p in &self.control_points {
+        for p in &self.vertices {
             min.x = p.x.min(min.x);
             min.y = p.y.min(min.y);
             min.z = p.z.min(min.z);
@@ -360,8 +360,8 @@ impl Object {
     // Métodos de transformação
     //--------------------------------------------------------------------------------
 
-    /// Gera a matriz de translação
-    pub fn gen_translation_matrix(&self, translation: &Vec3) -> Mat4 {
+    /// Gera a matriz de translação.
+    fn gen_translation_matrix(&self, translation: &Vec3) -> Mat4 {
         Mat4::new(
             1.0, 0.0, 0.0, translation.x,
             0.0, 1.0, 0.0, translation.y,
@@ -371,7 +371,7 @@ impl Object {
     }
 
     /// Aplica a transformação de translação nos pontos de controle e vértices
-    pub fn translate(&mut self, translation: &Vec3, m_sru_srt: &Mat4) {
+    pub fn translate(&mut self, translation: &Vec3) {
         let sru_translation_matrix: Mat4 = self.gen_translation_matrix(translation);
 
         // Atualiza pontos de controle
@@ -385,11 +385,10 @@ impl Object {
         }
 
         self.calc_centroid();
-        self.calc_srt_convertions(m_sru_srt);
     }
 
     /// Aplica a transformação de escala nos pontos de controle e vértices
-    pub fn scale(&mut self, scale: f32, m_sru_srt: &Mat4) {
+    pub fn scale(&mut self, scale: f32) {
         let scale_matrix: Mat4 = Mat4::new(
             scale, 0.0, 0.0, 0.0,
             0.0, scale, 0.0, 0.0,
@@ -397,22 +396,30 @@ impl Object {
             0.0, 0.0, 0.0, 1.0,
         );
 
-        // Atualiza pontos de controle
-        for cp in &mut self.control_points {
-            *cp = (scale_matrix * vec3_to_mat4x1(cp)).xyz();
+        let centroid = &self.centroid;
+        let minus_centroid = -centroid;
+        let to_origin: Mat4 = self.gen_translation_matrix(&centroid);
+        let to_centroid: Mat4 = self.gen_translation_matrix(&minus_centroid);
+
+        for control_point in &mut self.control_points {
+            let mut cp: Mat4x1 = to_centroid * vec3_to_mat4x1(control_point);
+            cp = scale_matrix * cp;
+            cp = to_origin * cp;
+            *control_point = cp.xyz();
         }
 
-        // Atualiza vértices
-        for vt in &mut self.vertices {
-            *vt = (scale_matrix * vec3_to_mat4x1(vt)).xyz();
+        for vertex in &mut self.vertices {
+            let mut vt: Mat4x1 = to_centroid * vec3_to_mat4x1(vertex);
+            vt = scale_matrix * vt;
+            vt = to_origin * vt;
+            *vertex = vt.xyz();
         }
 
         self.calc_centroid();
-        self.calc_srt_convertions(m_sru_srt);
     }
 
     /// Aplica a transformação de rotação em X nos pontos de controle e vértices
-    pub fn rotate_x(&mut self, angle: f32, m_sru_srt: &Mat4) {
+    pub fn rotate_x(&mut self, angle: f32) {
         let cos_theta = angle.cos();
         let sin_theta = angle.sin();
 
@@ -443,11 +450,10 @@ impl Object {
         }
 
         self.calc_centroid();
-        self.calc_srt_convertions(m_sru_srt);
     }
 
     /// Aplica a transformação de rotação em Y nos pontos de controle e vértices
-    pub fn rotate_y(&mut self, angle: f32, m_sru_srt: &Mat4) {
+    pub fn rotate_y(&mut self, angle: f32) {
         let cos_theta = angle.cos();
         let sin_theta = angle.sin();
 
@@ -478,11 +484,10 @@ impl Object {
         }
 
         self.calc_centroid();
-        self.calc_srt_convertions(m_sru_srt);
     }
 
     /// Aplica a transformação de rotação em Y nos pontos de controle e vértices
-    pub fn rotate_z(&mut self, angle: f32, m_sru_srt: &Mat4) {
+    pub fn rotate_z(&mut self, angle: f32) {
         let cos_theta = angle.cos();
         let sin_theta = angle.sin();
 
@@ -513,7 +518,6 @@ impl Object {
         }
 
         self.calc_centroid();
-        self.calc_srt_convertions(m_sru_srt);
     }
 
 

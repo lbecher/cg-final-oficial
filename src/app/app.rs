@@ -38,10 +38,9 @@ impl Default for App {
 
         let mut objects = Vec::new();
         objects.push(Object::new(2, 2, 3, 3, 3));
+        objects[0].scale(40.0);
+        objects[0].translate(&Vec3::new(300.0, 200.0, 0.0));
         objects[0].calc_srt_convertions(&render.m_sru_srt);
-        objects[0].scale(40.0, &render.m_sru_srt);
-        objects[0].translate(&Vec3::new(300.0, 200.0, 0.0), &render.m_sru_srt);
-        objects[0].calc_centroid();
 
         Self {
             objects,
@@ -135,7 +134,8 @@ impl App {
 
         if ui.button("Rodar").clicked() {
             if let Some(idx) = self.selected_object {
-                self.objects[idx].rotate_z(0.1, &self.render.m_sru_srt);
+                self.objects[idx].rotate_z(0.1);
+                self.objects[idx].calc_srt_convertions(&self.render.m_sru_srt);
             }
         }
     }

@@ -1,7 +1,7 @@
 use ordered_float::OrderedFloat;
 use std::collections::BTreeMap;
 use std::f32::INFINITY;
-use crate::{constants::*, object};
+use crate::constants::*;
 use crate::object::{Edge, Face, Object};
 use crate::types::*;
 
@@ -181,6 +181,10 @@ impl Render {
                     let x_final: usize = intersections[counter + 1].0.floor() as usize;
                     let z_initial: f32 = *intersections[counter].1;
                     let z_final: f32 = *intersections[counter + 1].1;
+
+                    if x_final < x_initial {
+                        continue;
+                    }
 
                     counter += 2;
 
