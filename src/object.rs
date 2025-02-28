@@ -416,7 +416,7 @@ impl Object {
             *vertex = vt.xyz();
         }
 
-        self.calc_centroid();
+        //self.calc_centroid();
     }
 
     /// Aplica a transformação de rotação em Y nos pontos de controle e vértices
@@ -450,7 +450,7 @@ impl Object {
             *vertex = vt.xyz();
         }
 
-        self.calc_centroid();
+        //self.calc_centroid();
     }
 
     /// Aplica a transformação de rotação em Y nos pontos de controle e vértices
@@ -484,7 +484,7 @@ impl Object {
             *vertex = vt.xyz();
         }
 
-        self.calc_centroid();
+        //self.calc_centroid();
     }
 
 
