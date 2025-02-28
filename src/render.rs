@@ -1,5 +1,5 @@
 use ordered_float::OrderedFloat;
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::f32::INFINITY;
 use crate::constants::*;
 use crate::object::{Edge, Face, Object};
@@ -41,10 +41,56 @@ pub struct Render {
     pub window: Window,
     pub viewport: Viewport,
     pub m_sru_srt: Mat4,
-    z_buffer: Vec<f32>,
+    zbuffer: Vec<f32>,
     pub buffer: Vec<u8>,
     pub buffer_width: usize,
     pub buffer_height: usize,
+}
+
+impl Default for Render {
+    fn default() -> Self {
+        let shader_type = ShaderType::Wireframe;
+        let camera = Camera {
+            vrp: Vec3::new(0.0, 0.0, 40.0),
+            p: Vec3::new(0.0, 0.0, 0.0),
+            y: Vec3::new(0.0, 1.0, 0.0),
+            dp: 40.0,
+        };
+        let window = Window {
+            xmin: -1.0,
+            xmax: 1.0,
+            ymin: -1.0,
+            ymax: 1.0,
+        };
+        let viewport = Viewport {
+            umin: 0.0,
+            umax: GUI_VIEWPORT_WIDTH - 1.0,
+            vmin: 0.0,
+            vmax: GUI_VIEWPORT_HEIGHT - 1.0,
+        };
+
+        let buffer_width = GUI_VIEWPORT_WIDTH as usize;
+        let buffer_height = GUI_VIEWPORT_HEIGHT as usize;
+
+        let buffer = vec![0; buffer_width * buffer_height * 4];
+        let zbuffer = vec![INFINITY; buffer_width * buffer_height];
+
+        let mut obj = Self {
+            shader_type,
+            camera,
+            window,
+            viewport,
+            m_sru_srt: Mat4::identity(),
+            zbuffer,
+            buffer,
+            buffer_width,
+            buffer_height,
+        };
+
+        obj.calc_sru_srt_matrix();
+
+        obj
+    }
 }
 
 impl Render {
@@ -70,7 +116,7 @@ impl Render {
                 vmax: 1.0,
             },
             m_sru_srt: Mat4::identity(),
-            z_buffer: vec![INFINITY; GUI_VIEWPORT_WIDTH as usize * GUI_VIEWPORT_WIDTH as usize],
+            zbuffer: vec![INFINITY; GUI_VIEWPORT_WIDTH as usize * GUI_VIEWPORT_WIDTH as usize],
             buffer: vec![0; GUI_VIEWPORT_WIDTH as usize * GUI_VIEWPORT_WIDTH as usize * 4],
             buffer_width: GUI_VIEWPORT_WIDTH as usize,
             buffer_height: GUI_VIEWPORT_WIDTH as usize,
@@ -81,10 +127,11 @@ impl Render {
     fn calc_sru_src_matrix(&self) -> Mat4 {
         let n: Vec3 = self.camera.vrp - self.camera.p;
         let nn: Vec3 = n.normalize();
+
         let v: Vec3 = self.camera.y - (self.camera.y.dot(&nn) * nn);
         let vn: Vec3 = v.normalize();
-        let u: Vec3 = vn.cross(&nn);
-        let un: Vec3 = u.normalize();
+
+        let un: Vec3 = vn.cross(&nn);
 
         Mat4::new(
             un.x, un.y, un.z, -self.camera.vrp.dot(&un),
@@ -107,9 +154,9 @@ impl Render {
     /// Calcula a matriz de transformação janela/porta de visão.
     fn calc_jp_matrix(&self) -> Mat4 {
         let sx = (self.viewport.umax - self.viewport.umin) / (self.window.xmax - self.window.xmin);
-        let sy = (self.viewport.vmax - self.viewport.vmin) / (self.window.ymax - self.window.ymin);
+        let sy = (self.viewport.vmin - self.viewport.vmax) / (self.window.ymax - self.window.ymin);
         let tx = -self.window.xmin * sx + self.viewport.umin;
-        let ty = -self.window.ymin * sy + self.viewport.vmin;
+        let ty = -self.window.ymin * ((self.viewport.vmax - self.viewport.vmin) / (self.window.ymax - self.window.ymin)) + self.viewport.vmin;
 
         Mat4::new(
             sx, 0.0, 0.0, tx,
@@ -120,14 +167,44 @@ impl Render {
     }
 
     /// Calcula a matriz de transformação de coordenadas em SRU para SRT (matriz concatenada).
-    fn calc_sru_srt_matrix(&self) -> Mat4 {
-        self.calc_jp_matrix() * self.calc_proj_matrix() * self.calc_sru_src_matrix()
+    fn calc_sru_srt_matrix(&mut self) {
+        self.m_sru_srt = self.calc_jp_matrix() * self.calc_proj_matrix() * self.calc_sru_src_matrix();
+    }
+
+    /// Converte os pontos de controle para o sistema de referência da tela.
+    pub fn calc_srt_control_points(
+        &self,
+        control_points: &[Vec3],
+    ) -> Vec<Vec3> {
+        let mut control_points_srt = Vec::with_capacity(control_points.len());
+        for i in 0..control_points.len() {
+            let mut control_point_srt: Mat4x1 = self.m_sru_srt * vec3_to_mat4x1(&control_points[i]);
+            control_point_srt.x /= control_point_srt.w;
+            control_point_srt.y /= control_point_srt.w;
+            control_points_srt.push(control_point_srt.xyz());
+        }
+        control_points_srt
+    }
+
+    /// Converte os vértices para o sistema de referência da tela.
+    pub fn calc_srt_vertices(
+        &self,
+        vertices: &[Vec3],
+    ) -> Vec<Vec3> {
+        let mut vertices_srt: Vec<Vec3> = Vec::with_capacity(vertices.len());
+        for i in 0..vertices.len() {
+            let mut vertex_srt: Mat4x1 = self.m_sru_srt * vec3_to_mat4x1(&vertices[i]);
+            vertex_srt.x /= vertex_srt.w;
+            vertex_srt.y /= vertex_srt.w;
+            vertices_srt.push(vertex_srt.xyz());
+        }
+        vertices_srt
     }
 
     /// Limpa os buffers de imagem e profundidade.
     pub fn clean_buffers(&mut self) {
-        self.buffer = vec![0; GUI_VIEWPORT_WIDTH as usize * GUI_VIEWPORT_WIDTH as usize * 4];
-        self.z_buffer = vec![0.0; GUI_VIEWPORT_WIDTH as usize * GUI_VIEWPORT_WIDTH as usize];
+        self.buffer = vec![0; self.buffer.len()];
+        self.zbuffer = vec![INFINITY; self.zbuffer.len()];
     }
 
     /// Renderiza as faces de uma malha.
@@ -139,13 +216,13 @@ impl Render {
     ) {
         match self.shader_type {
             ShaderType::Wireframe => {
-                let vertices = &object.vertices;
-                let vertices_srt = &object.vertices_srt;
+                let vertices_srt: Vec<Vec3> = self.calc_srt_vertices(&object.vertices);
                 let edges = &mut object.edges;
                 let faces = &object.faces;
-                self.calc_normal_test(vertices, edges, faces, &self.camera);
-                self.fill_wireframe(vertices_srt, faces);
-                self.edges_wireframe(vertices_srt, edges, primary_edge_color, secondary_edge_color);
+
+                self.calc_normal_test(&object.vertices, edges, faces, &self.camera);
+                self.fill_wireframe(&vertices_srt, faces);
+                //self.edges_wireframe(&vertices_srt, edges, primary_edge_color, secondary_edge_color);
             }
             ShaderType::Constant => {
                 todo!();
@@ -159,6 +236,67 @@ impl Render {
         }
     }
 
+    /// Calcula as interseções das arestas da face com as linhas horizontais.
+    pub fn calc_intersections(
+        vertices_srt: &[Vec3],
+        face: &Face,
+    ) -> HashMap<usize, Vec<(f32, f32)>> {
+        let mut intersections: HashMap<usize, Vec<(f32, f32)>> = HashMap::new();
+
+        for i in 0..4 {
+            let mut x0 = vertices_srt[face.vertices[i]].x;
+            let mut y0 = vertices_srt[face.vertices[i]].y.round();
+            let mut z0 = vertices_srt[face.vertices[i]].z;
+            let mut x1 = vertices_srt[face.vertices[i + 1]].x;
+            let mut y1 = vertices_srt[face.vertices[i + 1]].y.round();
+            let mut z1 = vertices_srt[face.vertices[i + 1]].z;
+
+            if y0 > y1 {
+                let x = x0;
+                x0 = x1;
+                x1 = x;
+
+                let y = y0;
+                y0 = y1;
+                y1 = y;
+
+                let z = z0;
+                z0 = z1;
+                z1 = z;
+            }
+
+            let dx = x1 - x0;
+            let dy = y1 - y0;
+            let dz = z1 - z0;
+            let tx = dx / dy;
+            let tz = dz / dy;
+
+            let mut x = x0;
+            let mut y = y0.round();
+            let mut z = z0;
+
+            while y < y1 {
+                if y >= 0.0 {
+                    let x_intersections = intersections.entry(y as usize)
+                        .or_insert(Vec::new());
+                    x_intersections.push((x, z));
+                }
+                x += tx;
+                y += 1.0;
+                z += tz;
+            }
+        }
+
+        for (_, intersections) in intersections.iter_mut() {
+            intersections.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        }
+
+        //println!("Intersections: {:?}", intersections);
+        //std::process::exit(0);
+
+        intersections
+    }
+
     /// Preenche as faces da malha com a técnica de wireframe.
     fn fill_wireframe(
         &mut self,
@@ -166,9 +304,13 @@ impl Render {
         faces: &[Face],
     ) {
         for face in faces.iter() {
+            let intersections: HashMap<usize, Vec<(f32, f32)>> = Self::calc_intersections(vertices_srt, face);
+            //println!("Intersections: {:?}", intersections);
+            //std::process::exit(0);
             // Para cada face, calcula as interseções da varredura
-            for (i, intersections) in Render::calc_intersections(&vertices_srt, face) {
+            for (i, intersections) in intersections {
                 // TODO! Resolver essa gambiarra
+                
                 if intersections.len() < 2 {
                     // Não há interseções suficientes para formar uma aresta (WHY???)
                     continue;
@@ -179,14 +321,14 @@ impl Render {
                 while counter < (intersections.len() / 2) * 2 {
                     let x_initial: usize = intersections[counter].0.ceil() as usize;
                     let x_final: usize = intersections[counter + 1].0.floor() as usize;
-                    let z_initial: f32 = *intersections[counter].1;
-                    let z_final: f32 = *intersections[counter + 1].1;
+                    let z_initial: f32 = intersections[counter].1;
+                    let z_final: f32 = intersections[counter + 1].1;
+
+                    counter += 2;
 
                     if x_final < x_initial {
                         continue;
                     }
-
-                    counter += 2;
 
                     let dx = (x_final - x_initial) as f32;
                     let dz = z_final - z_initial;
@@ -196,10 +338,10 @@ impl Render {
 
                     for j in x_initial..=x_final {
                         let z_index = i * self.buffer_width + j;
-                        if z > self.z_buffer[z_index] {
+                        if z < self.zbuffer[z_index] {
                             let color = [0, 0, 255, 255];
                             self.paint(i, j, color);
-                            self.z_buffer[z_index] = z;
+                            self.zbuffer[z_index] = z;
                         }
                         z += tz;
                     }
@@ -310,64 +452,6 @@ impl Render {
         self.buffer[index + 1] = color[1];
         self.buffer[index + 2] = color[2];
         self.buffer[index + 3] = color[3];
-    }
-
-    /// Calcula as interseções das arestas da face com as linhas horizontais.
-    pub fn calc_intersections(
-        vertices_srt: &[Vec3],
-        face: &Face,
-    ) -> BTreeMap<usize, Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>> {
-        let mut intersections: BTreeMap<usize, Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>> = BTreeMap::new();
-
-        for i in 0..3 {
-            let mut x0 = vertices_srt[face.vertices[i]].x;
-            let mut y0 = vertices_srt[face.vertices[i]].y.round();
-            let mut z0 = vertices_srt[face.vertices[i]].z;
-            let mut x1 = vertices_srt[face.vertices[i + 1]].x;
-            let mut y1 = vertices_srt[face.vertices[i + 1]].y.round();
-            let mut z1 = vertices_srt[face.vertices[i + 1]].z;
-
-            if y0 > y1 {
-                let x = x0;
-                x0 = x1;
-                x1 = x;
-
-                let y = y0;
-                y0 = y1;
-                y1 = y;
-
-                let z = z0;
-                z0 = z1;
-                z1 = z;
-            }
-
-            let dx = x1 - x0;
-            let dy = y1 - y0;
-            let dz = z1 - z0;
-            let tx = dx / dy;
-            let tz = dz / dy;
-
-            let mut x = x0;
-            let mut y = y0.round();
-            let mut z = z0;
-
-            while y < y1 {
-                if y >= 0.0 {
-                    let x_intersections = intersections.entry(y as usize)
-                        .or_insert(Vec::new());
-                    x_intersections.push((x.into(), z.into()));
-                }
-                x += tx;
-                y += 1.0;
-                z += tz;
-            }
-        }
-
-        for (_, intersections) in intersections.iter_mut() {
-            intersections.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        }
-
-        intersections
     }
 
     fn calc_normal_test(

@@ -12,7 +12,7 @@ pub struct Edge {
 
 #[derive(Debug)]
 pub struct Face {
-    pub vertices: [usize; 4],
+    pub vertices: [usize; 5],
     pub edges: [usize; 4],
 }
 
@@ -32,9 +32,7 @@ pub struct Object {
     knots_j: Vec<f32>,
 
     pub control_points: Vec<Vec3>,
-    pub control_points_srt: Vec<Vec3>,
     pub vertices: Vec<Vec3>,
-    pub vertices_srt: Vec<Vec3>,
     pub edges: Vec<Edge>,
     pub faces: Vec<Face>,
 
@@ -65,14 +63,11 @@ impl Object {
             }
         }
         Self::smooth_control_points(&mut control_points, smoothing_iterations, ni, nj);
-        let control_points_srt: Vec<Vec3> = Vec::with_capacity((ni + 1) * (nj + 1));
 
         let knots_i: Vec<f32> = Self::spline_knots(ni, 3);
         let knots_j: Vec<f32> = Self::spline_knots(nj, 3);
 
         let vertices: Vec<Vec3> = Vec::with_capacity(resi * resj);
-        let vertices_srt: Vec<Vec3> = Vec::with_capacity(resi * resj);
-
         let edges: Vec<Edge> = Vec::with_capacity(resj*(resi - 1) + resi*(resj - 1));
         let faces: Vec<Face> = Vec::with_capacity((resi - 1) * (resj - 1));
 
@@ -85,9 +80,7 @@ impl Object {
             knots_j,
 
             control_points,
-            control_points_srt,
             vertices,
-            vertices_srt,
             edges,
             faces,
 
@@ -296,7 +289,7 @@ impl Object {
                 // associar a face para obtermos o resultado do teste
                 // de visibilidade para atribuir a cor correta.
                 self.faces.push(Face {
-                    vertices: [a_index, b_index, c_index, d_index],
+                    vertices: [a_index, b_index, c_index, d_index, a_index],
                     edges: [da_index, ab_index, cb_index, dc_index],
                 });
             }
@@ -328,32 +321,6 @@ impl Object {
             (min.y + max.y) / 2.0,
             (min.z + max.z) / 2.0,
         );
-    }
-
-    /// Gera as conversões dos pontos de controle e vértices para o sistema de referência da tela.
-    pub fn calc_srt_convertions(&mut self, m_sru_srt: &Mat4) {
-        std::thread::scope(|s| {
-            s.spawn(|| {
-                // Calcula os pontos de controle no sistema de referência da tela
-                self.control_points_srt.clear();
-                for i in 0..self.control_points.len() {
-                    let mut control_point_srt: Mat4x1 = m_sru_srt * vec3_to_mat4x1(&self.control_points[i]);
-                    control_point_srt.x /= control_point_srt.w;
-                    control_point_srt.y /= control_point_srt.w;
-                    self.control_points_srt.push(control_point_srt.xyz());
-                }
-            });
-            s.spawn(|| {
-                // Calcilando os vértices no sistema de referência da tela
-                self.vertices_srt.clear();
-                for i in 0..self.vertices.len() {
-                    let mut vertex_srt: Mat4x1 = m_sru_srt * vec3_to_mat4x1(&self.vertices[i]);
-                    vertex_srt.x /= vertex_srt.w;
-                    vertex_srt.y /= vertex_srt.w;
-                    self.vertices_srt.push(vertex_srt.xyz());
-                }
-            });
-        });
     }
 
     //--------------------------------------------------------------------------------

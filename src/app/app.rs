@@ -37,10 +37,9 @@ impl Default for App {
         let image = ColorImage::from_rgba_premultiplied(size, &buffer);
 
         let mut objects = Vec::new();
-        objects.push(Object::new(2, 2, 3, 3, 3));
+        objects.push(Object::new(2, 2, 6, 6, 3));
         objects[0].scale(40.0);
         objects[0].translate(&Vec3::new(300.0, 200.0, 0.0));
-        objects[0].calc_srt_convertions(&render.m_sru_srt);
 
         Self {
             objects,
@@ -106,11 +105,18 @@ impl App {
     }
 
     pub fn side_panel_content(&mut self, ui: &mut Ui) {
-        ui.horizontal( |ui| {
-            ui.label("Tema:");
-            ui.radio_value(&mut self.theme, Theme::Light, "Claro");
-            ui.radio_value(&mut self.theme, Theme::Dark, "Escuro");
-        });
+        ui.heading("Tema");
+        ui.radio_value(&mut self.theme, Theme::Light, "Claro");
+        ui.radio_value(&mut self.theme, Theme::Dark, "Escuro");
+
+        ui.heading("Projeto");
+        if ui.button("Salvar projeto").clicked() {
+            //self.save_objects();
+        }
+        if ui.button("Carregar projeto").clicked() {
+           // self.load_objects();
+        }
+        ui.separator();
 
         ui.horizontal( |ui| {
             ui.label("Cor primaria:");
@@ -135,7 +141,6 @@ impl App {
         if ui.button("Rodar").clicked() {
             if let Some(idx) = self.selected_object {
                 self.objects[idx].rotate_z(0.1);
-                self.objects[idx].calc_srt_convertions(&self.render.m_sru_srt);
             }
         }
     }
@@ -163,7 +168,7 @@ impl App {
             let m_srt_sru: Mat4 = m_sru_srt.try_inverse().unwrap(); //.unwrap_or_else(Mat4::identity);
 
             let control_point_radius = 2.0;
-            let control_points_srt: Vec<Vec3> = self.objects[idx].control_points_srt.clone();
+            let control_points_srt: Vec<Vec3> = self.render.calc_srt_control_points(&self.objects[idx].control_points);
             let control_points: &mut Vec<Vec3> = &mut self.objects[idx].control_points;
 
             let mut dragged = false;
@@ -197,7 +202,6 @@ impl App {
             if dragged {
                 self.objects[idx].calc_mesh();
                 self.objects[idx].calc_centroid();
-                self.objects[idx].calc_srt_convertions(&m_sru_srt);
                 self.redraw();
             }
         }
