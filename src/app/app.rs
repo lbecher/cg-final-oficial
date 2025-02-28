@@ -138,6 +138,8 @@ impl App {
             vector_input(ui, "L (posição da lâmpada)", &mut self.l);
         });
 
+        ui.separator();
+
         if ui.button("Rodar").clicked() {
             if let Some(idx) = self.selected_object {
                 self.objects[idx].rotate_z(0.1);
