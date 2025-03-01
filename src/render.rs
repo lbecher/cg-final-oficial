@@ -123,12 +123,12 @@ impl Render {
             );
             let no: Vec3 = (self.camera.vrp - centroid).normalize();
 
-            if nn.dot(&no) > 0.0 {
-                object.edges[face.edges[0]].visible = true;
-                object.edges[face.edges[1]].visible = true;
-                object.edges[face.edges[2]].visible = true;
-                object.edges[face.edges[3]].visible = true;
-            }
+            let visivel: bool = nn.dot(&no) > 0.0;
+
+            object.edges[face.edges[0]].visible = visivel;
+            object.edges[face.edges[1]].visible = visivel;
+            object.edges[face.edges[2]].visible = visivel;
+            object.edges[face.edges[3]].visible = visivel;
         }
     }
 
@@ -347,6 +347,14 @@ impl Render {
 
         for k in 0..points.len() {
             let (j, i) = points[k];
+
+            if i >= self.buffer_height {
+                continue;
+            }
+            if j >= self.buffer_width {
+                continue;
+            }
+
             let zbuffer_index = i * self.buffer_width + j;
             if z < self.zbuffer[zbuffer_index] {
                 self.paint(i, j, color);
@@ -384,43 +392,45 @@ impl Render {
     ) {
         let vertices_srt = self.calc_srt_convertions(&object.vertices);
 
+        self.calc_normal_test(object);
+
         // Para cada face, calcula as interseções da scanline
         for face in object.faces.iter() {
             let intersections = Self::calc_intersections(&vertices_srt, face);
 
             // Para cada scanline i
-            for (i, intersections) in intersections {
-                if intersections.len() < 2 {
+            for (i, scaline_intersections) in intersections.iter() {
+                if scaline_intersections.len() < 2 {
                     continue;
                 }
 
-                if i >= self.buffer_height as usize {
+                if *i >= self.buffer_height as usize {
                     continue;
                 }
 
                 let mut counter = 0;
 
                 // Para cada par de interseções da scanline
-                while counter < intersections.len() {
-                    let x_initial: usize = intersections[counter].0.ceil() as usize;
-                    let x_final: usize = intersections[counter + 1].0.floor() as usize;
-                    let z_initial: f32 = intersections[counter].1;
-                    let z_final: f32 = intersections[counter + 1].1;
+                while counter < scaline_intersections.len() {
+                    let x0: usize = scaline_intersections[counter].0.ceil() as usize;
+                    let x1: usize = scaline_intersections[counter + 1].0.floor() as usize;
+                    let z0: f32 = scaline_intersections[counter].1;
+                    let z1: f32 = scaline_intersections[counter + 1].1;
 
                     counter += 2;
 
-                    if x_final < x_initial {
+                    if x1 < x0 {
                         continue;
                     }
 
-                    let dx = (x_final - x_initial) as f32;
-                    let dz = z_final - z_initial;
+                    let dx = (x1 - x0) as f32;
+                    let dz = z1 - z0;
                     let tz = dz / dx;
 
-                    let mut z: f32 = z_initial;
+                    let mut z: f32 = z0;
 
                     // Para cada pixel na scanline
-                    for j in x_initial..=x_final {
+                    for j in x0..=x1 {
                         if j >= self.buffer_width {
                             continue;
                         }
@@ -429,7 +439,7 @@ impl Render {
 
                         if z < self.zbuffer[z_index] {
                             let color = [0,0,0,0];
-                            self.paint(i, j, color);
+                            self.paint(*i, j, color);
                             self.zbuffer[z_index] = z;
                         }
 
@@ -439,7 +449,6 @@ impl Render {
             }
         }
 
-        self.calc_normal_test(object);
         self.draw_wireframe_edges(&vertices_srt, &object.edges, primary_edge_color, secondary_edge_color);
     }
 
