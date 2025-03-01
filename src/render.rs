@@ -271,11 +271,39 @@ impl Render {
         self.buffer[index + 3] = color[3];
     }
 
+    /// Renderiza as faces de uma malha.
+    pub fn render(
+        &mut self,
+        object: &mut Object,
+        primary_edge_color: [u8; 4],
+        secondary_edge_color: [u8; 4],
+    ) {
+        match self.shader_type {
+            ShaderType::Wireframe => {
+                self.render_wireframe(object, primary_edge_color, secondary_edge_color);
+            }
+            ShaderType::Constant => {
+                self.render_constant(object);
+            }
+            ShaderType::Gouraud => {
+                self.render_gouraud(object);
+            }
+            ShaderType::Phong => {
+                self.render_phong(object);
+            }
+        }
+    }
+
     /// Algoritmo para desenho de linhas 3D.
-    fn draw_line(&mut self, start: Vec3, end: Vec3, color: [u8; 4]) {
+    fn draw_line(
+        &mut self,
+        start: &Vec3,
+        end: &Vec3,
+        color: [u8; 4],
+    ) {
         let x0 = start.x as i32;
-        let y0 = end.x as i32;
-        let x1 = start.y as i32;
+        let y0 = start.y as i32;
+        let x1 = end.x as i32;
         let y1 = end.y as i32;
 
         let dx = (x1 - x0).abs();
@@ -310,29 +338,6 @@ impl Render {
         }
     }
 
-    /// Renderiza as faces de uma malha.
-    pub fn render(
-        &mut self,
-        object: &mut Object,
-        primary_edge_color: [u8; 4],
-        secondary_edge_color: [u8; 4],
-    ) {
-        match self.shader_type {
-            ShaderType::Wireframe => {
-                self.render_wireframe(object, primary_edge_color, secondary_edge_color);
-            }
-            ShaderType::Constant => {
-                self.render_constant(object);
-            }
-            ShaderType::Gouraud => {
-                self.render_gouraud(object);
-            }
-            ShaderType::Phong => {
-                self.render_phong(object);
-            }
-        }
-    }
-
     /// Pinta as arestas da malha com o algoritmo de Bresenham adaptado para 3D.
     fn draw_wireframe_edges(
         &mut self,
@@ -342,8 +347,8 @@ impl Render {
         secondary_edge_color: [u8; 4],
     ) {
         for edge in edges.iter() {
-            let start = vertices_srt[edge.vertices[0]];
-            let end = vertices_srt[edge.vertices[1]];
+            let start = &vertices_srt[edge.vertices[0]];
+            let end = &vertices_srt[edge.vertices[1]];
             if edge.visible {
                 self.draw_line(start, end, primary_edge_color);
             } else {
@@ -405,7 +410,7 @@ impl Render {
                         let z_index = i * self.buffer_width + j;
 
                         if z < self.zbuffer[z_index] {
-                            let color = [0, 0, 255, 255];
+                            let color = [0, 0, 0, 0];
                             self.paint(i, j, color);
                             self.zbuffer[z_index] = z;
                         }
@@ -417,7 +422,7 @@ impl Render {
         }
 
         self.calc_normal_test(object);
-        //self.draw_wireframe_edges(&vertices_srt, &object.edges, primary_edge_color, secondary_edge_color);
+        self.draw_wireframe_edges(&vertices_srt, &object.edges, primary_edge_color, secondary_edge_color);
     }
 
     fn render_constant(

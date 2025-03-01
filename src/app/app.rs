@@ -146,16 +146,7 @@ impl App {
         if ui.button("Rodar").clicked() {
             if let Some(idx) = self.selected_object {
                 self.objects[idx].rotate_z(0.1);
-            }
-        }
-        if ui.button("Printar SRU SRT").clicked() {
-            println!("M_SRU_SRT: {}", self.render.m_sru_srt);
-            println!("M_SRT_SRU: {}", self.render.m_srt_sru);
-        }
-        if ui.button("Printar vétices").clicked() {
-            if let Some(idx) = self.selected_object {
-                let vertices_srt = self.render.calc_srt_convertions(&self.objects[idx].vertices);
-                println!("SRT_VT: {:?}", vertices_srt);
+                self.redraw();
             }
         }
     }
