@@ -1,22 +1,24 @@
 use rand::Rng;
+use serde::{Serialize, Deserialize};
 use std::sync::{Arc, Mutex};
 use std::cmp::min;
 use crate::constants::*;
 use crate::types::*;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Edge {
     pub vertices: [usize; 2],
     pub visible: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Face {
     pub vertices: [usize; 5],
     pub edges: [usize; 4],
 }
 
 /// Estrutura para armazenar uma superfície BSpline.
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Object {
     /// Quantidades de pontos de controle na direção i.
     ni: usize,
@@ -31,12 +33,16 @@ pub struct Object {
     /// Nós (knots) na direção j.
     knots_j: Vec<f32>,
 
+    /// Pontos de controle da superfície.
     pub control_points: Vec<Vec3>,
-    pub vertices: Vec<Vec3>,
-    pub edges: Vec<Edge>,
-    pub faces: Vec<Face>,
 
-    /// Centroide dos pontos de controle.
+    /// Vértices da malha.
+    pub vertices: Vec<Vec3>,
+    /// Arestas da malha.
+    pub edges: Vec<Edge>,
+    /// Faces da malha.
+    pub faces: Vec<Face>,
+    /// Centroide da malha.
     pub centroid: Vec3,
 
     // TODO: Adicionar propriedades de cores
@@ -50,22 +56,10 @@ impl Object {
         resj: usize,
         smoothing_iterations: u8,
     ) -> Self {
-        let mut rng = rand::thread_rng();
+        let control_points: Vec<Vec3> = Self::gen_control_points(ni, nj, smoothing_iterations);
 
-        let mut control_points: Vec<Vec3> = Vec::with_capacity((ni + 1) * (nj + 1));
-        for i in 0..=ni {
-            for j in 0..=nj {
-                control_points.push(Vec3::new(
-                    i as f32,
-                    j as f32,
-                    rng.gen_range(0.0..10.0),
-                ));
-            }
-        }
-        Self::smooth_control_points(&mut control_points, smoothing_iterations, ni, nj);
-
-        let knots_i: Vec<f32> = Self::spline_knots(ni, 3);
-        let knots_j: Vec<f32> = Self::spline_knots(nj, 3);
+        let knots_i: Vec<f32> = Self::spline_knots(ni, TI);
+        let knots_j: Vec<f32> = Self::spline_knots(nj, TJ);
 
         let vertices: Vec<Vec3> = Vec::with_capacity(resi * resj);
         let edges: Vec<Edge> = Vec::with_capacity(resj*(resi - 1) + resi*(resj - 1));
@@ -94,9 +88,56 @@ impl Object {
         obj
     }
 
+    pub fn set_ni_nj(&mut self, ni: usize, nj: usize, smoothing_iterations: u8) {
+        self.ni = ni;
+        self.nj = nj;
+
+        self.knots_i = Self::spline_knots(ni, TI);
+        self.knots_j = Self::spline_knots(nj, TJ);
+
+        self.control_points = Self::gen_control_points(self.ni, self.nj, smoothing_iterations);
+
+        self.calc_mesh();
+        self.calc_edges_and_faces();
+        self.calc_centroid();
+    }
+
+    pub fn get_ni_nj(&self) -> (usize, usize) {
+        (self.ni, self.nj)
+    }
+
+    pub fn set_resi_resj(&mut self, resi: usize, resj: usize) {
+        self.resi = resi;
+        self.resj = resj;
+
+        self.calc_mesh();
+        self.calc_edges_and_faces();
+        self.calc_centroid();
+    }
+
+    pub fn get_resi_resj(&self) -> (usize, usize) {
+        (self.resi, self.resj)
+    }
+
     //--------------------------------------------------------------------------------
     // Geração da superfície
     //--------------------------------------------------------------------------------
+
+    fn gen_control_points(ni: usize, nj: usize, smoothing_iterations: u8) -> Vec<Vec3> {
+        let mut rng = rand::thread_rng();
+        let mut control_points: Vec<Vec3> = Vec::with_capacity((ni + 1) * (nj + 1));
+        for i in 0..=ni {
+            for j in 0..=nj {
+                control_points.push(Vec3::new(
+                    i as f32,
+                    j as f32,
+                    rng.gen_range(0.0..10.0),
+                ));
+            }
+        }
+        Self::smooth_control_points(&mut control_points, smoothing_iterations, ni, nj);
+        control_points
+    }
 
     fn spline_knots(n: usize, t: usize) -> Vec<f32> {
         let mut knots = Vec::with_capacity(n + t + 1);
@@ -142,10 +183,7 @@ impl Object {
         let resj = self.resj;
 
         // Zera os vértices
-        self.vertices.clear();
-        for _ in 0..self.resi*self.resj {
-            self.vertices.push(Vec3::zeros());
-        }
+        self.vertices = vec![Vec3::zeros(); resi * resj];
 
         // Cálculo dos incrementos
         let increment_i = (self.ni as f32 - TI as f32 + 2.0) / resi as f32;
@@ -294,15 +332,14 @@ impl Object {
                 });
             }
         }
+
+        println!("Vertices: {:?}", self.vertices);
+        println!("Edges: {:?}", self.edges);
+        println!("Faces: {:?}", self.faces);
     }
 
     /// Calcula o centroide através do box envolvente.
     pub fn calc_centroid(&mut self) {
-        if self.vertices.is_empty() {
-            self.centroid = Vec3::zeros();
-            return;
-        }
-
         let first: Vec3 = self.vertices[0];
         let mut min: Vec3 = first;
         let mut max: Vec3 = first;
@@ -339,16 +376,16 @@ impl Object {
 
     /// Aplica a transformação de translação nos pontos de controle e vértices
     pub fn translate(&mut self, translation: &Vec3) {
-        let sru_translation_matrix: Mat4 = self.gen_translation_matrix(translation);
+        let translation_matrix: Mat4 = self.gen_translation_matrix(translation);
 
-        // Atualiza pontos de controle
-        for cp in &mut self.control_points {
-            *cp = (sru_translation_matrix * vec3_to_mat4x1(cp)).xyz();
+        for control_point in &mut self.control_points {
+            let cp: Mat4x1 = translation_matrix * vec3_to_mat4x1(control_point);
+            *control_point = cp.xyz();
         }
 
-        // Atualiza vértices
-        for vt in &mut self.vertices {
-            *vt = (sru_translation_matrix * vec3_to_mat4x1(vt)).xyz();
+        for vertex in &mut self.vertices {
+            let vt: Mat4x1 = translation_matrix * vec3_to_mat4x1(vertex);
+            *vertex = vt.xyz();
         }
 
         self.calc_centroid();
@@ -381,8 +418,6 @@ impl Object {
             vt = to_origin * vt;
             *vertex = vt.xyz();
         }
-
-        self.calc_centroid();
     }
 
     /// Aplica a transformação de rotação em X nos pontos de controle e vértices

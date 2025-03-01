@@ -1,4 +1,3 @@
-use ordered_float::OrderedFloat;
 use std::collections::HashMap;
 use std::f32::INFINITY;
 use crate::constants::*;
@@ -18,7 +17,6 @@ pub struct Camera {
     pub vrp: Vec3,
     pub p: Vec3,
     pub y: Vec3,
-    pub dp: f32,
 }
 
 pub struct Window {
@@ -41,6 +39,7 @@ pub struct Render {
     pub window: Window,
     pub viewport: Viewport,
     pub m_sru_srt: Mat4,
+    pub m_srt_sru: Mat4,
     zbuffer: Vec<f32>,
     pub buffer: Vec<u8>,
     pub buffer_width: usize,
@@ -54,13 +53,12 @@ impl Default for Render {
             vrp: Vec3::new(0.0, 0.0, 40.0),
             p: Vec3::new(0.0, 0.0, 0.0),
             y: Vec3::new(0.0, 1.0, 0.0),
-            dp: 40.0,
         };
         let window = Window {
-            xmin: -1.0,
-            xmax: 1.0,
-            ymin: -1.0,
-            ymax: 1.0,
+            xmin: -GUI_VIEWPORT_WIDTH / 2.0,
+            xmax: GUI_VIEWPORT_WIDTH / 2.0,
+            ymin: -GUI_VIEWPORT_HEIGHT / 2.0,
+            ymax: GUI_VIEWPORT_HEIGHT / 2.0,
         };
         let viewport = Viewport {
             umin: 0.0,
@@ -68,6 +66,9 @@ impl Default for Render {
             vmin: 0.0,
             vmax: GUI_VIEWPORT_HEIGHT - 1.0,
         };
+
+        let m_sru_srt = Mat4::identity();
+        let m_srt_sru = Mat4::identity();
 
         let buffer_width = GUI_VIEWPORT_WIDTH as usize;
         let buffer_height = GUI_VIEWPORT_HEIGHT as usize;
@@ -80,7 +81,8 @@ impl Default for Render {
             camera,
             window,
             viewport,
-            m_sru_srt: Mat4::identity(),
+            m_sru_srt,
+            m_srt_sru,
             zbuffer,
             buffer,
             buffer_width,
@@ -94,32 +96,39 @@ impl Default for Render {
 }
 
 impl Render {
-    pub fn new() -> Self {
-        Self {
-            shader_type: ShaderType::Wireframe,
-            camera: Camera {
-                vrp: Vec3::new(0.0, 0.0, 0.0),
-                p: Vec3::new(0.0, 0.0, 1.0),
-                y: Vec3::new(0.0, 1.0, 0.0),
-                dp: 1.0,
-            },
-            window: Window {
-                xmin: -1.0,
-                xmax: 1.0,
-                ymin: -1.0,
-                ymax: 1.0,
-            },
-            viewport: Viewport {
-                umin: 0.0,
-                umax: 1.0,
-                vmin: 0.0,
-                vmax: 1.0,
-            },
-            m_sru_srt: Mat4::identity(),
-            zbuffer: vec![INFINITY; GUI_VIEWPORT_WIDTH as usize * GUI_VIEWPORT_WIDTH as usize],
-            buffer: vec![0; GUI_VIEWPORT_WIDTH as usize * GUI_VIEWPORT_WIDTH as usize * 4],
-            buffer_width: GUI_VIEWPORT_WIDTH as usize,
-            buffer_height: GUI_VIEWPORT_WIDTH as usize,
+    /// Limpa os buffers de imagem e profundidade.
+    pub fn clean_buffers(&mut self) {
+        self.buffer = vec![0; self.buffer.len()];
+        self.zbuffer = vec![INFINITY; self.zbuffer.len()];
+    }
+
+    /// Calcula o teste de visibilidade das arestas da malha.
+    fn calc_normal_test(
+        &self,
+        object: &mut Object,
+    ) {
+        for face in object.faces.iter() {
+            let a: Vec3 = object.vertices[face.vertices[0]];
+            let b: Vec3 = object.vertices[face.vertices[1]];
+            let c: Vec3 = object.vertices[face.vertices[2]];
+
+            let bc: Vec3 = Vec3::new(c.x - b.x, c.y - b.y, c.z - b.z);
+            let ba: Vec3 = Vec3::new(a.x - b.x, a.y - b.y, a.z - b.z);
+            let nn: Vec3 = bc.cross(&ba).normalize();
+
+            let centroid: Vec3 = Vec3::new(
+                (a.x + b.x + c.x) / 3.0,
+                (a.y + b.y + c.y) / 3.0,
+                (a.z + b.z + c.z) / 3.0,
+            );
+            let no: Vec3 = (self.camera.vrp - centroid).normalize();
+
+            if nn.dot(&no) > 0.0 {
+                object.edges[face.edges[0]].visible = true;
+                object.edges[face.edges[1]].visible = true;
+                object.edges[face.edges[2]].visible = true;
+                object.edges[face.edges[3]].visible = true;
+            }
         }
     }
 
@@ -143,12 +152,7 @@ impl Render {
 
     /// Calcula a matriz de projeção axonométrica isométrica.
     fn calc_proj_matrix(&self) -> Mat4 {
-        Mat4::new(
-            (2.0_f32).sqrt() / 2.0, 0.0, (2.0_f32).sqrt() / 2.0, 0.0,
-            (6.0_f32).sqrt() / 6.0, (3.0_f32).sqrt() / 3.0, -(6.0_f32).sqrt() / 6.0, 0.0,
-            -(3.0_f32).sqrt() / 3.0, (6.0_f32).sqrt() / 6.0, (6.0_f32).sqrt() / 6.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        )
+        Mat4::identity()
     }
 
     /// Calcula a matriz de transformação janela/porta de visão.
@@ -156,7 +160,7 @@ impl Render {
         let sx = (self.viewport.umax - self.viewport.umin) / (self.window.xmax - self.window.xmin);
         let sy = (self.viewport.vmin - self.viewport.vmax) / (self.window.ymax - self.window.ymin);
         let tx = -self.window.xmin * sx + self.viewport.umin;
-        let ty = -self.window.ymin * ((self.viewport.vmax - self.viewport.vmin) / (self.window.ymax - self.window.ymin)) + self.viewport.vmin;
+        let ty = self.window.ymin * ((self.viewport.vmax - self.viewport.vmin) / (self.window.ymax - self.window.ymin)) + self.viewport.vmax;
 
         Mat4::new(
             sx, 0.0, 0.0, tx,
@@ -169,71 +173,22 @@ impl Render {
     /// Calcula a matriz de transformação de coordenadas em SRU para SRT (matriz concatenada).
     fn calc_sru_srt_matrix(&mut self) {
         self.m_sru_srt = self.calc_jp_matrix() * self.calc_proj_matrix() * self.calc_sru_src_matrix();
+        self.m_srt_sru = (self.calc_proj_matrix() * self.calc_sru_src_matrix()).try_inverse().unwrap_or_else(Mat4::identity);
     }
 
-    /// Converte os pontos de controle para o sistema de referência da tela.
-    pub fn calc_srt_control_points(
+    /// Converte os pontos para o sistema de referência da tela.
+    pub fn calc_srt_convertions(
         &self,
-        control_points: &[Vec3],
+        sru_coords: &[Vec3],
     ) -> Vec<Vec3> {
-        let mut control_points_srt = Vec::with_capacity(control_points.len());
-        for i in 0..control_points.len() {
-            let mut control_point_srt: Mat4x1 = self.m_sru_srt * vec3_to_mat4x1(&control_points[i]);
-            control_point_srt.x /= control_point_srt.w;
-            control_point_srt.y /= control_point_srt.w;
-            control_points_srt.push(control_point_srt.xyz());
+        let mut srt_coords = Vec::with_capacity(sru_coords.len());
+        for i in 0..sru_coords.len() {
+            let mut srt: Mat4x1 = self.m_sru_srt * vec3_to_mat4x1(&sru_coords[i]);
+            srt.x /= srt.w;
+            srt.y /= srt.w;
+            srt_coords.push(srt.xyz());
         }
-        control_points_srt
-    }
-
-    /// Converte os vértices para o sistema de referência da tela.
-    pub fn calc_srt_vertices(
-        &self,
-        vertices: &[Vec3],
-    ) -> Vec<Vec3> {
-        let mut vertices_srt: Vec<Vec3> = Vec::with_capacity(vertices.len());
-        for i in 0..vertices.len() {
-            let mut vertex_srt: Mat4x1 = self.m_sru_srt * vec3_to_mat4x1(&vertices[i]);
-            vertex_srt.x /= vertex_srt.w;
-            vertex_srt.y /= vertex_srt.w;
-            vertices_srt.push(vertex_srt.xyz());
-        }
-        vertices_srt
-    }
-
-    /// Limpa os buffers de imagem e profundidade.
-    pub fn clean_buffers(&mut self) {
-        self.buffer = vec![0; self.buffer.len()];
-        self.zbuffer = vec![INFINITY; self.zbuffer.len()];
-    }
-
-    /// Renderiza as faces de uma malha.
-    pub fn render(
-        &mut self,
-        object: &mut Object,
-        primary_edge_color: [u8; 4],
-        secondary_edge_color: [u8; 4],
-    ) {
-        match self.shader_type {
-            ShaderType::Wireframe => {
-                let vertices_srt: Vec<Vec3> = self.calc_srt_vertices(&object.vertices);
-                let edges = &mut object.edges;
-                let faces = &object.faces;
-
-                self.calc_normal_test(&object.vertices, edges, faces, &self.camera);
-                self.fill_wireframe(&vertices_srt, faces);
-                //self.edges_wireframe(&vertices_srt, edges, primary_edge_color, secondary_edge_color);
-            }
-            ShaderType::Constant => {
-                todo!();
-            }
-            ShaderType::Gouraud => {
-                todo!();
-            }
-            ShaderType::Phong => {
-                todo!();
-            }
-        }
+        srt_coords
     }
 
     /// Calcula as interseções das arestas da face com as linhas horizontais.
@@ -241,7 +196,7 @@ impl Render {
         vertices_srt: &[Vec3],
         face: &Face,
     ) -> HashMap<usize, Vec<(f32, f32)>> {
-        let mut intersections: HashMap<usize, Vec<(f32, f32)>> = HashMap::new();
+        let mut intersections = HashMap::new();
 
         for i in 0..4 {
             let mut x0 = vertices_srt[face.vertices[i]].x;
@@ -291,145 +246,7 @@ impl Render {
             intersections.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
         }
 
-        //println!("Intersections: {:?}", intersections);
-        //std::process::exit(0);
-
         intersections
-    }
-
-    /// Preenche as faces da malha com a técnica de wireframe.
-    fn fill_wireframe(
-        &mut self,
-        vertices_srt: &[Vec3],
-        faces: &[Face],
-    ) {
-        for face in faces.iter() {
-            let intersections: HashMap<usize, Vec<(f32, f32)>> = Self::calc_intersections(vertices_srt, face);
-            //println!("Intersections: {:?}", intersections);
-            //std::process::exit(0);
-            // Para cada face, calcula as interseções da varredura
-            for (i, intersections) in intersections {
-                // TODO! Resolver essa gambiarra
-                
-                if intersections.len() < 2 {
-                    // Não há interseções suficientes para formar uma aresta (WHY???)
-                    continue;
-                }
-
-                let mut counter = 0;
-
-                while counter < (intersections.len() / 2) * 2 {
-                    let x_initial: usize = intersections[counter].0.ceil() as usize;
-                    let x_final: usize = intersections[counter + 1].0.floor() as usize;
-                    let z_initial: f32 = intersections[counter].1;
-                    let z_final: f32 = intersections[counter + 1].1;
-
-                    counter += 2;
-
-                    if x_final < x_initial {
-                        continue;
-                    }
-
-                    let dx = (x_final - x_initial) as f32;
-                    let dz = z_final - z_initial;
-                    let tz = dz / dx;
-
-                    let mut z: f32 = z_initial;
-
-                    for j in x_initial..=x_final {
-                        let z_index = i * self.buffer_width + j;
-                        if z < self.zbuffer[z_index] {
-                            let color = [0, 0, 255, 255];
-                            self.paint(i, j, color);
-                            self.zbuffer[z_index] = z;
-                        }
-                        z += tz;
-                    }
-                }
-            }
-        }
-    }
-
-    /// Pinta as arestas da malha com o algoritmo de Bresenham adaptado para 3D.
-    fn edges_wireframe(
-        &mut self,
-        vertices_srt: &[Vec3],
-        edges: &[Edge],
-        primary_edge_color: [u8; 4],
-        secondary_edge_color: [u8; 4],
-    ) { 
-        for edge in edges.iter() {
-            let start = vertices_srt[edge.vertices[0]];
-            let end = vertices_srt[edge.vertices[1]];
-            // Neste exemplo, tratamos todas como cor primária
-            if edge.visible {
-                self.bresenham_3d(start, end, primary_edge_color);
-            } else {
-                self.bresenham_3d(start, end, secondary_edge_color);
-            }
-        }
-    }
-
-    fn bresenham_3d(&mut self, start: Vec3, end: Vec3, color: [u8; 4]) {
-        let x0 = start.x as i32;
-        let y0 = end.x as i32;
-        let x1 = start.y as i32;
-        let y1 = end.y as i32;
-
-        let dx = (x1 - x0).abs();
-        let dy = (y1 - y0).abs();
-    
-        let sx = if x0 < x1 { 1 } else { -1 };
-        let sy = if y0 < y1 { 1 } else { -1 };
-    
-        let mut x = x0;
-        let mut y = y0;
-    
-        let mut err = dx - dy;
-    
-        loop {
-            self.paint(y as usize, x as usize, color);
-
-            if x == x1 && y == y1 {
-                break;
-            }
-    
-            let e2 = 2 * err;
-    
-            if e2 > -dy {
-                err -= dy;
-                x += sx;
-            }
-    
-            if e2 < dx {
-                err += dx;
-                y += sy;
-            }
-        }
-    }
-
-    fn fill_constant(
-        &mut self,
-        vertices_srt: &[Mat4x1],
-        faces: &[([usize; 4], f32)],
-    ) {
-        todo!();
-    }
-
-    fn fill_gouraud(
-        &mut self,
-        vertices_srt: &[Mat4x1],
-        faces: &[([usize; 4], f32)],
-    ) {
-        todo!();
-    }
-
-    fn fill_phong(
-        &mut self,
-        vertices_srt: &[Mat4x1],
-        faces: &[([usize; 4], f32)],
-    ) {
-        todo!();
     }
 
     /// Pinta um pixel no buffer de imagem.
@@ -454,35 +271,176 @@ impl Render {
         self.buffer[index + 3] = color[3];
     }
 
-    fn calc_normal_test(
-        &self,
-        vertices: &[Vec3],
-        edges: &mut [Edge],
-        faces: &[Face],
-        camera: &Camera,
-    ) {
-        for face in faces.iter() {
-            let a: Vec3 = vertices[face.vertices[0]];
-            let b: Vec3 = vertices[face.vertices[1]];
-            let c: Vec3 = vertices[face.vertices[2]];
+    /// Algoritmo para desenho de linhas 3D.
+    fn draw_line(&mut self, start: Vec3, end: Vec3, color: [u8; 4]) {
+        let x0 = start.x as i32;
+        let y0 = end.x as i32;
+        let x1 = start.y as i32;
+        let y1 = end.y as i32;
 
-            let bc: Vec3 = Vec3::new(c.x - b.x, c.y - b.y, c.z - b.z);
-            let ba: Vec3 = Vec3::new(a.x - b.x, a.y - b.y, a.z - b.z);
-            let nn: Vec3 = bc.cross(&ba).normalize();
+        let dx = (x1 - x0).abs();
+        let dy = (y1 - y0).abs();
 
-            let centroid: Vec3 = Vec3::new(
-                (a.x + b.x + c.x) / 3.0,
-                (a.y + b.y + c.y) / 3.0,
-                (a.z + b.z + c.z) / 3.0,
-            );
-            let no: Vec3 = (camera.vrp - centroid).normalize();
+        let sx = if x0 < x1 { 1 } else { -1 };
+        let sy = if y0 < y1 { 1 } else { -1 };
 
-            if nn.dot(&no) > 0.0 {
-                edges[face.edges[0]].visible = true;
-                edges[face.edges[1]].visible = true;
-                edges[face.edges[2]].visible = true;
-                edges[face.edges[3]].visible = true;
+        let mut x = x0;
+        let mut y = y0;
+
+        let mut err = dx - dy;
+
+        loop {
+            self.paint(y as usize, x as usize, color);
+
+            if x == x1 && y == y1 {
+                break;
+            }
+
+            let e2 = 2 * err;
+
+            if e2 > -dy {
+                err -= dy;
+                x += sx;
+            }
+
+            if e2 < dx {
+                err += dx;
+                y += sy;
             }
         }
+    }
+
+    /// Renderiza as faces de uma malha.
+    pub fn render(
+        &mut self,
+        object: &mut Object,
+        primary_edge_color: [u8; 4],
+        secondary_edge_color: [u8; 4],
+    ) {
+        match self.shader_type {
+            ShaderType::Wireframe => {
+                self.render_wireframe(object, primary_edge_color, secondary_edge_color);
+            }
+            ShaderType::Constant => {
+                self.render_constant(object);
+            }
+            ShaderType::Gouraud => {
+                self.render_gouraud(object);
+            }
+            ShaderType::Phong => {
+                self.render_phong(object);
+            }
+        }
+    }
+
+    /// Pinta as arestas da malha com o algoritmo de Bresenham adaptado para 3D.
+    fn draw_wireframe_edges(
+        &mut self,
+        vertices_srt: &[Vec3],
+        edges: &[Edge],
+        primary_edge_color: [u8; 4],
+        secondary_edge_color: [u8; 4],
+    ) {
+        for edge in edges.iter() {
+            let start = vertices_srt[edge.vertices[0]];
+            let end = vertices_srt[edge.vertices[1]];
+            if edge.visible {
+                self.draw_line(start, end, primary_edge_color);
+            } else {
+                self.draw_line(start, end, secondary_edge_color);
+            }
+        }
+    }
+
+    /// Preenche as faces da malha com a técnica de wireframe.
+    fn render_wireframe(
+        &mut self,
+        object: &mut Object,
+        primary_edge_color: [u8; 4],
+        secondary_edge_color: [u8; 4],
+    ) {
+        let vertices_srt = self.calc_srt_convertions(&object.vertices);
+
+        // Para cada face, calcula as interseções da scanline
+        for face in object.faces.iter() {
+            let intersections = Self::calc_intersections(&vertices_srt, face);
+
+            // Para cada scanline i
+            for (i, intersections) in intersections {
+                if intersections.len() < 2 {
+                    continue;
+                }
+
+                if i >= self.buffer_height as usize {
+                    continue;
+                }
+
+                let mut counter = 0;
+
+                // Para cada par de interseções da scanline
+                while counter < intersections.len() {
+                    let x_initial: usize = intersections[counter].0.ceil() as usize;
+                    let x_final: usize = intersections[counter + 1].0.floor() as usize;
+                    let z_initial: f32 = intersections[counter].1;
+                    let z_final: f32 = intersections[counter + 1].1;
+
+                    counter += 2;
+
+                    if x_final < x_initial {
+                        continue;
+                    }
+
+                    let dx = (x_final - x_initial) as f32;
+                    let dz = z_final - z_initial;
+                    let tz = dz / dx;
+
+                    let mut z: f32 = z_initial;
+
+                    // Para cada pixel na scanline
+                    for j in x_initial..=x_final {
+                        if j >= self.buffer_width {
+                            continue;
+                        }
+
+                        let z_index = i * self.buffer_width + j;
+
+                        if z < self.zbuffer[z_index] {
+                            let color = [0, 0, 255, 255];
+                            self.paint(i, j, color);
+                            self.zbuffer[z_index] = z;
+                        }
+
+                        z += tz;
+                    }
+                }
+            }
+        }
+
+        self.calc_normal_test(object);
+        //self.draw_wireframe_edges(&vertices_srt, &object.edges, primary_edge_color, secondary_edge_color);
+    }
+
+    fn render_constant(
+        &mut self,
+        object: &mut Object,
+    ) {
+        let vertices_srt = self.calc_srt_convertions(&object.vertices);
+        todo!();
+    }
+
+    fn render_gouraud(
+        &mut self,
+        object: &mut Object,
+    ) {
+        let vertices_srt = self.calc_srt_convertions(&object.vertices);
+        todo!();
+    }
+
+    fn render_phong(
+        &mut self,
+        object: &mut Object,
+    ) {
+        let vertices_srt = self.calc_srt_convertions(&object.vertices);
+        todo!();
     }
 }

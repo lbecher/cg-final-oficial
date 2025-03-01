@@ -30,16 +30,16 @@ pub struct App {
 
 impl Default for App {
     fn default() -> Self {
-        let render = Render::new();
+        let render = Render::default();
 
         let buffer = render.buffer.clone();
         let size = [render.buffer_width, render.buffer_height];
         let image = ColorImage::from_rgba_premultiplied(size, &buffer);
 
         let mut objects = Vec::new();
-        objects.push(Object::new(2, 2, 6, 6, 3));
-        objects[0].scale(40.0);
-        objects[0].translate(&Vec3::new(300.0, 200.0, 0.0));
+        objects.push(Object::new(2, 2, 3,3, 3));
+        //objects[0].scale(200.0);
+        //objects[0].translate(&Vec3::new(300.0, 200.0, 0.0));
 
         Self {
             objects,
@@ -93,8 +93,7 @@ impl App {
         for object in &mut self.objects {
             let primary_edge_color = self.primary_color;
             let secondary_edge_color = self.secondary_color;
-            let render = &mut self.render;
-            render.render(object, primary_edge_color, secondary_edge_color);
+            self.render.render(object, primary_edge_color, secondary_edge_color);
         }
 
         let buffer = self.render.buffer.clone();
@@ -145,6 +144,16 @@ impl App {
                 self.objects[idx].rotate_z(0.1);
             }
         }
+        if ui.button("Printar SRU SRT").clicked() {
+            println!("M_SRU_SRT: {}", self.render.m_sru_srt);
+            println!("M_SRT_SRU: {}", self.render.m_srt_sru);
+        }
+        if ui.button("Printar vétices").clicked() {
+            if let Some(idx) = self.selected_object {
+                let vertices_srt = self.render.calc_srt_convertions(&self.objects[idx].vertices);
+                println!("SRT_VT: {:?}", vertices_srt);
+            }
+        }
     }
 
     pub fn central_panel_content(&mut self, ui: &mut Ui) {
@@ -166,11 +175,10 @@ impl App {
         painter.image(texture_id, response.rect, uv, Color32::WHITE);
 
         if let Some(idx) = self.selected_object {
-            let m_sru_srt: Mat4 = self.render.m_sru_srt.clone();
-            let m_srt_sru: Mat4 = m_sru_srt.try_inverse().unwrap(); //.unwrap_or_else(Mat4::identity);
+            let m_srt_sru: Mat4 = self.render.m_srt_sru.clone();
 
             let control_point_radius = 2.0;
-            let control_points_srt: Vec<Vec3> = self.render.calc_srt_control_points(&self.objects[idx].control_points);
+            let control_points_srt: Vec<Vec3> = self.render.calc_srt_convertions(&self.objects[idx].control_points);
             let control_points: &mut Vec<Vec3> = &mut self.objects[idx].control_points;
 
             let mut dragged = false;
@@ -187,7 +195,7 @@ impl App {
 
                 if point_response.dragged() {
                     let drag_delta: Vec2 = point_response.drag_delta();
-                    let drag_delta_sru = m_srt_sru * Mat4x1::new(drag_delta.x, drag_delta.y, 0.0, 1.0);
+                    let drag_delta_sru: Mat4x1 = m_srt_sru * Mat4x1::new(drag_delta.x, -drag_delta.y, 0.0, 1.0);
 
                     point += drag_delta;
                     control_points[i] += mat4x1_to_vec3(&drag_delta_sru);

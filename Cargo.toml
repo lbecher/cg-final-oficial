@@ -11,6 +11,7 @@ opt-level = 3
 
 [dependencies]
 eframe = "0.30.0"
-nalgebra = "0.33.2"
+nalgebra = { version = "0.33.2", features = ["serde", "serde-serialize"] }
 ordered-float = "4.6.0"
 rand = "0.8.5"
+serde = { version = "1.0.218", features = ["derive"] }
