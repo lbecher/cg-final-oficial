@@ -144,7 +144,7 @@ impl Object {
                 control_points.push(Vec3::new(
                     i as f32,
                     j as f32,
-                    rng.gen_range(0.0..10.0),
+                    rng.gen_range(0.0..2.0),
                 ));
             }
         }
