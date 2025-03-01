@@ -8,7 +8,7 @@ use crate::types::*;
 #[derive(Clone, PartialEq)]
 pub enum ShaderType {
     Wireframe,
-    Constant,
+    Flat,
     Gouraud,
     Phong,
 }
@@ -282,7 +282,7 @@ impl Render {
             ShaderType::Wireframe => {
                 self.render_wireframe(object, primary_edge_color, secondary_edge_color);
             }
-            ShaderType::Constant => {
+            ShaderType::Flat => {
                 self.render_constant(object);
             }
             ShaderType::Gouraud => {
