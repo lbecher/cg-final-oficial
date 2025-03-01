@@ -46,7 +46,10 @@ pub struct Object {
     /// Centroide da malha.
     pub centroid: Vec3,
 
-    // TODO: Adicionar propriedades de cores
+    pub ka: Vec3,
+    pub kd: Vec3,
+    pub ks: Vec3,
+    pub n: f32,
 }
 
 impl Object {
@@ -56,6 +59,10 @@ impl Object {
         resi: usize,
         resj: usize,
         smoothing_iterations: u8,
+        ka: Vec3,
+        kd: Vec3,
+        ks: Vec3,
+        n: f32,
     ) -> Self {
         let control_points: Vec<Vec3> = Self::gen_control_points(ni, nj, smoothing_iterations);
 
@@ -80,6 +87,11 @@ impl Object {
             faces,
 
             centroid: Vec3::zeros(),
+
+            ka,
+            kd,
+            ks,
+            n,
         };
 
         obj.calc_mesh();
