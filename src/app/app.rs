@@ -38,10 +38,10 @@ impl Default for App {
 
         let mut objects = Vec::new();
         objects.push(Object::new(2, 2, 3,3, 3));
-        //objects[0].scale(200.0);
+        objects[0].scale(100.0);
         //objects[0].translate(&Vec3::new(300.0, 200.0, 0.0));
 
-        Self {
+        let mut obj = Self {
             objects,
             selected_object: Some(0),
 
@@ -63,7 +63,11 @@ impl Default for App {
             ],
 
             theme: Theme::Dark,
-        }
+        };
+
+        obj.redraw();
+
+        obj
     }
 }
 
