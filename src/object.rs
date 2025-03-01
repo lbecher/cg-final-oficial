@@ -15,6 +15,7 @@ pub struct Edge {
 pub struct Face {
     pub vertices: [usize; 5],
     pub edges: [usize; 4],
+    pub visible: bool,
 }
 
 /// Estrutura para armazenar uma superfície BSpline.
@@ -329,6 +330,7 @@ impl Object {
                 self.faces.push(Face {
                     vertices: [a_index, b_index, c_index, d_index, a_index],
                     edges: [da_index, ab_index, cb_index, dc_index],
+                    visible: false,
                 });
             }
         }

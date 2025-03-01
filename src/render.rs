@@ -301,10 +301,12 @@ impl Render {
         end: &Vec3,
         color: [u8; 4],
     ) {
-        let x0 = start.x as i32;
-        let y0 = start.y as i32;
-        let x1 = end.x as i32;
-        let y1 = end.y as i32;
+        let x0 = start.x as isize;
+        let y0 = start.y as isize;
+        let z0 = start.z;
+        let x1 = end.x as isize;
+        let y1 = end.y as isize;
+        let z1 = end.z;
 
         let dx = (x1 - x0).abs();
         let dy = (y1 - y0).abs();
@@ -317,8 +319,10 @@ impl Render {
 
         let mut err = dx - dy;
 
+        let mut points = Vec::new();
+
         loop {
-            self.paint(y as usize, x as usize, color);
+            points.push((x as usize, y as usize));
 
             if x == x1 && y == y1 {
                 break;
@@ -335,6 +339,20 @@ impl Render {
                 err += dx;
                 y += sy;
             }
+        }
+
+        let dz = z1 - z0;
+        let tz = dz / points.len() as f32;
+        let mut z = z0;
+
+        for k in 0..points.len() {
+            let (j, i) = points[k];
+            let zbuffer_index = i * self.buffer_width + j;
+            if z < self.zbuffer[zbuffer_index] {
+                self.paint(i, j, color);
+                self.zbuffer[zbuffer_index] = z;
+            }
+            z += tz;
         }
     }
 
@@ -410,7 +428,7 @@ impl Render {
                         let z_index = i * self.buffer_width + j;
 
                         if z < self.zbuffer[z_index] {
-                            let color = [0, 0, 0, 0];
+                            let color = [0,0,0,0];
                             self.paint(i, j, color);
                             self.zbuffer[z_index] = z;
                         }
