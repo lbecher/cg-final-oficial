@@ -394,8 +394,16 @@ impl Render {
 
         self.calc_normal_test(object);
 
+        let mut faces = object.faces.clone();
+        faces.sort_by(|a, b| {
+            let a_z = (vertices_srt[a.vertices[0]].z + vertices_srt[a.vertices[1]].z + vertices_srt[a.vertices[2]].z + vertices_srt[a.vertices[3]].z) / 4.0;
+            let b_z = (vertices_srt[b.vertices[0]].z + vertices_srt[b.vertices[1]].z + vertices_srt[b.vertices[2]].z + vertices_srt[b.vertices[3]].z) / 4.0;
+            a_z.partial_cmp(&b_z).unwrap()
+        });
+        faces.reverse();
+
         // Para cada face, calcula as interseções da scanline
-        for face in object.faces.iter() {
+        for face in faces.iter() {
             let intersections = Self::calc_intersections(&vertices_srt, face);
 
             // Para cada scanline i

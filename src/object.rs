@@ -5,13 +5,13 @@ use std::cmp::min;
 use crate::constants::*;
 use crate::types::*;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Edge {
     pub vertices: [usize; 2],
     pub visible: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Face {
     pub vertices: [usize; 5],
     pub edges: [usize; 4],
@@ -19,7 +19,7 @@ pub struct Face {
 }
 
 /// Estrutura para armazenar uma superfície BSpline.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Object {
     /// Quantidades de pontos de controle na direção i.
     ni: usize,
@@ -334,10 +334,6 @@ impl Object {
                 });
             }
         }
-
-        println!("Vertices: {:?}", self.vertices);
-        println!("Edges: {:?}", self.edges);
-        println!("Faces: {:?}", self.faces);
     }
 
     /// Calcula o centroide através do box envolvente.

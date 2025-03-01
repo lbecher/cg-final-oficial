@@ -37,7 +37,7 @@ impl Default for App {
         let image = ColorImage::from_rgba_premultiplied(size, &buffer);
 
         let mut objects = Vec::new();
-        objects.push(Object::new(2, 2, 3,3, 3));
+        objects.push(Object::new(5, 5, 20,20, 3));
         objects[0].scale(100.0);
         //objects[0].translate(&Vec3::new(300.0, 200.0, 0.0));
 
@@ -143,7 +143,19 @@ impl App {
 
         ui.separator();
 
-        if ui.button("Rodar").clicked() {
+        if ui.button("Rodar X").clicked() {
+            if let Some(idx) = self.selected_object {
+                self.objects[idx].rotate_x(0.1);
+                self.redraw();
+            }
+        }
+        if ui.button("Rodar Y").clicked() {
+            if let Some(idx) = self.selected_object {
+                self.objects[idx].rotate_y(0.1);
+                self.redraw();
+            }
+        }
+        if ui.button("Rodar Z").clicked() {
             if let Some(idx) = self.selected_object {
                 self.objects[idx].rotate_z(0.1);
                 self.redraw();
