@@ -457,51 +457,9 @@ impl Render {
         self.draw_wireframe_edges(&vertices_srt, &object.edges, primary_edge_color, secondary_edge_color);
     }
 
-    fn calculate_lighting(&self, object: &Object, normal: &Vec3, position: &Vec3) -> [u8; 4] {
-        let light_pos = Vec3::new(100.0, 100.0, 100.0); // Exemplo
-        let light_dir = (light_pos - position).normalize();
-        let ambient = 0.2;
-        
-        // Difuso
-        let diffuse_intensity = normal.dot(&light_dir).max(0.0);
-        
-        // Especular
-        if diffuse_intensity <= 0.0 {
-            return [0, 0, 0, 255];
-        }else{
-            let view_dir = (self.camera.vrp - position).normalize();
-            let reflect_dir = (-light_dir).reflect(normal);
-            let specular_intensity = view_dir.dot(&reflect_dir).max(0.0).powf(object.n);
-            
-            // Combinação
-            let r = ((object.ka.x + object.kd.x * diffuse_intensity + object.ks.x * specular_intensity) * 255.0) as u8;
-            let g = ((object.ka.y + object.kd.y * diffuse_intensity + object.ks.y * specular_intensity) * 255.0) as u8;
-            let b = ((object.ka.z + object.kd.z * diffuse_intensity + object.ks.z * specular_intensity) * 255.0) as u8;
-            
-            [r, g, b, 255]
-        }
-        
-    }
-
-
     fn render_constant(
-        fn render_constant(&mut self, object: &mut Object) {
-            let vertices_srt = self.calc_srt_convertions(&object.vertices);
-            
-            for face in &object.faces {
-                let normal = self.calculate_face_normal(object, face);
-                let centroid = self.calculate_face_centroid(object, face);
-                let color = self.calculate_lighting(object, &normal, &centroid);
-                
-                let intersections = Self::calc_intersections(&vertices_srt, face);
-                
-                // Preenchimento da face com cor constante
-                for (i, scaline_intersections) in intersections {
-                    // Mesma lógica de preenchimento do wireframe, mas usando a cor calculada
-                }
-          
-              }
-        }
+        &mut self,
+        object: &mut Object,
     ) {
         let vertices_srt = self.calc_srt_convertions(&object.vertices);
         todo!();
