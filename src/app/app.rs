@@ -41,7 +41,7 @@ impl Default for App {
         let kd: Vec3 = Vec3::new(0.7, 0.0, 0.0);
         let ks: Vec3 = Vec3::new(0.5, 0.0, 0.0);
         let n: f32 = 2.0;
-        objects.push(Object::new(3, 3, 20,20, 3, ka, kd, ks, n));
+        objects.push(Object::new(100, 100, 150,150, 3, ka, kd, ks, n));
         objects[0].scale(100.0);
         //objects[0].translate(&Vec3::new(300.0, 200.0, 0.0));
 

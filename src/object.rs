@@ -1,7 +1,6 @@
 use rand::Rng;
 use serde::{Serialize, Deserialize};
-use std::sync::{Arc, Mutex};
-use std::cmp::min;
+use std::sync::Arc;
 use crate::constants::*;
 use crate::types::*;
 
@@ -188,6 +187,24 @@ impl Object {
         }
     }
 
+    fn compute_basis(knots: &[f32], n: usize, res: usize, t: usize) -> Vec<f32> {
+        // Armazenaremos em basis[k * res + i] o valor de N_k(u_i)
+        let mut basis = vec![0.0; (n + 1) * res];
+
+        // Intervalo total do parâmetro (ex.: para t=4, BSpline cúbica)
+        // (n + 2 - t) é a região 'válida' onde a spline é não-nula.
+        let increment = (n as f32 + 2.0 - t as f32) / res as f32;
+
+        for i in 0..res {
+            let u = i as f32 * increment; // parâmetro u na i-ésima amostra
+            for k in 0..=n {
+                // Chamamos spline_blend apenas uma vez por (k, i)
+                basis[k * res + i] = Self::spline_blend(k, t, knots, u);
+            }
+        }
+        basis
+    }
+
     /// Gera a malha da superfície.
     pub fn calc_mesh(&mut self) {
         let ni = self.ni;
@@ -195,104 +212,97 @@ impl Object {
         let resi = self.resi;
         let resj = self.resj;
 
-        // Zera os vértices
-        self.vertices = vec![Vec3::zeros(); resi * resj];
+        // 1) Pré-computar as funções de base para as duas direções
+        let basis_i = Self::compute_basis(&self.knots_i, ni, resi, TI);
+        let basis_j = Self::compute_basis(&self.knots_j, nj, resj, TJ);
 
-        // Cálculo dos incrementos
-        let increment_i = (self.ni as f32 - TI as f32 + 2.0) / resi as f32;
-        let increment_j = (self.nj as f32 - TJ as f32 + 2.0) / resj as f32;
+        // 2) Alocar o vetor final (vazio) onde colocaremos todos os vértices
+        let mut new_vertices = vec![Vec3::zeros(); resi * resj];
 
-        // Vamos obter o número de threads
+        // 3) Calcular quantas threads e dividir linhas em blocos
         let n_threads = crate::utils::num_cpu_threads();
-
-        // Dividimos as linhas (i) em blocos para cada thread processar
-        // Pegamos o resto da divisão para distribuir as iterações que sobraram entre as threads
         let chunk_size = resi / n_threads;
         let remainder = resi % n_threads;
 
-        // Para facilitar o acesso concorrente, usamos Arc para ler e escrever de forma segura.
-        // - knots_i e knots_j, control_points são apenas lidos (podem ser compartilhados sem Mutex).
-        // - vertices precisa de Mutex (semáforo) para escrita simultânea.
-        let arc_knots_i = Arc::new(self.knots_i.clone());
-        let arc_knots_j = Arc::new(self.knots_j.clone());
-        let arc_control_points = Arc::new(self.control_points.clone());
+        // Clonar para passar às threads
+        let basis_i_arc = Arc::new(basis_i);
+        let basis_j_arc = Arc::new(basis_j);
+        let cps_arc = Arc::new(self.control_points.clone());
 
-        // Precisamos de Mutex para poder escrever em 'vertices' paralelamente
-        let arc_vertices = Arc::new(Mutex::new(vec![Vec3::zeros(); resi * resj]));
-
-        // Vetor de handles de thread
         let mut handles = Vec::with_capacity(n_threads);
+        let mut ranges = Vec::with_capacity(n_threads);
 
-        for i in 0..n_threads {
-            // Calculamos o intervalo de linhas (i) que essa thread irá processar
-            let start_i = i * chunk_size + min(i, remainder);
-            let end_i = start_i + chunk_size + if i < remainder { 1 } else { 0 };
+        // Vamos determinar o intervalo de linhas [start_i..end_i) que cada thread processa
+        let mut current_i = 0;
+        for thread_id in 0..n_threads {
+            // Quantas linhas esta thread vai pegar
+            let lines_in_this_chunk = chunk_size + if thread_id < remainder { 1 } else { 0 };
+            let start_i = current_i;
+            let end_i = start_i + lines_in_this_chunk;
+            current_i = end_i;
 
-            // Clonamos as referências compartilhadas
-            let knots_i = Arc::clone(&arc_knots_i);
-            let knots_j = Arc::clone(&arc_knots_j);
-            let control_points = Arc::clone(&arc_control_points);
-            let vertices = Arc::clone(&arc_vertices);
+            // Clonamos as referências (Arc) para usar dentro da thread
+            let basis_i_ref = Arc::clone(&basis_i_arc);
+            let basis_j_ref = Arc::clone(&basis_j_arc);
+            let cps_ref = Arc::clone(&cps_arc);
 
-            // Spawn da thread
+            // Criamos a thread
             let handle = std::thread::spawn(move || {
-                // Vetor local para armazenar o resultado parcial
-                let mut local_vertices =
-                    vec![Vec3::new(0.0, 0.0, 0.0); (end_i - start_i) * resj];
+                // Aloca vetor parcial para as (lines_in_this_chunk * resj) posições
+                let mut partial = vec![Vec3::zeros(); lines_in_this_chunk * resj];
 
-                // Iniciamos o intervalo de i de acordo com start_i
-                let mut interval_i = start_i as f32 * increment_i;
-
-                for i in start_i..end_i {
-                    let mut interval_j = 0.0;
+                // Para cada linha local
+                for local_i in 0..lines_in_this_chunk {
+                    // i = linha global, mas relativo ao start_i deste chunk
+                    let i = start_i + local_i;
 
                     for j in 0..resj {
-                        let local_idx = (i - start_i) * resj + j;
+                        let mut sum = Vec3::zeros();
 
-                        // Soma as contribuições de cada ponto de controle
+                        // Recupera funções de base pré-calculadas:
+                        //   bi = basis_i_ref[ki * resi + i]
+                        //   bj = basis_j_ref[kj * resj + j]
+                        // e soma contribuições dos pontos de controle
                         for ki in 0..=ni {
+                            let bi = basis_i_ref[ki * resi + i];
                             for kj in 0..=nj {
-                                let bi = Self::spline_blend(ki, TI, &knots_i, interval_i);
-                                let bj = Self::spline_blend(kj, TJ, &knots_j, interval_j);
-
+                                let bj = basis_j_ref[kj * resj + j];
                                 let blend = bi * bj;
-                                let cp_idx = ki * (nj + 1) + kj;
 
-                                local_vertices[local_idx] =
-                                    local_vertices[local_idx] + control_points[cp_idx] * blend;
+                                let cp_idx = ki * (nj + 1) + kj;
+                                sum = sum + (cps_ref[cp_idx] * blend);
                             }
                         }
-                        interval_j += increment_j;
+
+                        partial[local_i * resj + j] = sum;
                     }
-                    interval_i += increment_i;
                 }
 
-                // Copiar o resultado parcial para o vetor global
-                {
-                    let mut global_vertices = vertices.lock().unwrap();
-                    for i_local in 0..(end_i - start_i) {
-                        for j_local in 0..resj {
-                            let local_out_idx = i_local * resj + j_local;
-                            let global_out_idx = (start_i + i_local) * resj + j_local;
-                            global_vertices[global_out_idx] = local_vertices[local_out_idx];
-                        }
-                    }
-                }
+                partial // Retorna o vetor parcial ao final
             });
 
+            // Guardamos o handle da thread e o intervalo que ela processou
             handles.push(handle);
+            ranges.push((start_i, end_i));
         }
 
-        // Esperar todas as threads terminarem
-        for handle in handles {
-            handle.join().unwrap();
+        // 4) Juntamos todos os pedaços no vetor final `new_vertices`
+        for (handle, (start_i, end_i)) in handles.into_iter().zip(ranges.into_iter()) {
+            // Esperamos a thread terminar e recuperar o vetor parcial
+            let partial = handle.join().unwrap();
+
+            // Copia `partial` na posição certa de `new_vertices`
+            // Cada `local_i` corresponde a i global = start_i + local_i
+            // Tamanho de partial = (end_i - start_i) * resj
+            let mut offset = start_i * resj;
+            for vtx in partial {
+                new_vertices[offset] = vtx;
+                offset += 1;
+            }
         }
 
-        // Recuperar os vértices calculados para dentro de self.vertices
-        {
-            let final_vertices = arc_vertices.lock().unwrap();
-            self.vertices.copy_from_slice(&final_vertices);
-        }
+        // 5) Finalmente, atribuir ao self.vertices
+        self.vertices = new_vertices;
     }
 
     /// Gera as faces da malha.
