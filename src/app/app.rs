@@ -1,6 +1,7 @@
 use eframe::{App as EguiApp, Frame};
 use eframe::emath;
 use eframe::egui::{pos2, CentralPanel, Color32, ColorImage, Context, Pos2, Rect, Sense, Shape, SidePanel,  TextureId, TextureOptions, Ui, Vec2};
+use crate::app::color_input::*;
 use crate::app::vector_input::*;
 use crate::constants::*;
 use crate::object::Object;
@@ -21,9 +22,9 @@ pub struct App {
     p: VectorInputData,
     y: VectorInputData,
 
+    lia: ColorInputData,
     l: VectorInputData,
-
-    _control_points: Vec<Vec3>,
+    li: ColorInputData,
 
     theme: Theme,
 }
@@ -37,9 +38,9 @@ impl Default for App {
         let image = ColorImage::from_rgba_premultiplied(size, &buffer);
 
         let mut objects = Vec::new();
-        let ka: Vec3 = Vec3::new(0.4, 0.0, 0.0);
-        let kd: Vec3 = Vec3::new(0.7, 0.0, 0.0);
-        let ks: Vec3 = Vec3::new(0.5, 0.0, 0.0);
+        let ka: Vec3 = Vec3::new(0.4, 0.4, 0.0);
+        let kd: Vec3 = Vec3::new(0.7, 0.9, 0.4);
+        let ks: Vec3 = Vec3::new(0.5, 0.1, 0.0);
         let n: f32 = 2.0;
         objects.push(Object::new(4, 4, 8,8, 3, ka, kd, ks, n));
         objects[0].scale(100.0);
@@ -58,13 +59,10 @@ impl Default for App {
             vrp: VectorInputData::new(0.0, 0.0, 0.0),
             p: VectorInputData::default(),
             y: VectorInputData::new(0.0, 1.0, 0.0),
-            l: VectorInputData::default(),
 
-            _control_points: vec![
-                Vec3::new(100.0, 100.0, 0.0),
-                Vec3::new(200.0, 200.0, 0.0),
-                Vec3::new(300.0, 100.0, 0.0),
-            ],
+            l: VectorInputData::default(),
+            li: ColorInputData::default(),
+            lia: ColorInputData::default(),
 
             theme: Theme::Dark,
         };
@@ -129,12 +127,30 @@ impl App {
         ui.separator();
 
         ui.heading("Sombreamento");
-        ui.radio_value(&mut self.render.shader_type, ShaderType::Wireframe, "Wireframe");
-        ui.radio_value(&mut self.render.shader_type, ShaderType::Flat, "Flate");
+        let old_shader = self.render.shader_type.clone();
+        let old_visibility_filter = self.render.visibility_filter;
+        ui.radio_value(&mut self.render.shader_type, ShaderType::Wireframe, "Arramado");
+        ui.radio_value(&mut self.render.shader_type, ShaderType::Flat, "Constante");
         ui.radio_value(&mut self.render.shader_type, ShaderType::Gouraud, "Gouraud");
         ui.radio_value(&mut self.render.shader_type, ShaderType::Phong, "Phong");
+        ui.checkbox(&mut self.render.visibility_filter, "Filtro de visibilidade");
+        if self.render.shader_type != old_shader || self.render.visibility_filter != old_visibility_filter {
+            self.redraw();
+        }
 
         ui.separator();
+
+        ui.heading("Iluminação");
+        vector_input(ui, "L (posição da lâmpada)", &mut self.l);
+        color_input(ui, "Li (cor da lâmpada)", &mut self.li);
+        color_input(ui, "Lia (cor da luz ambiente)", &mut self.lia);
+
+        ui.separator();
+
+        ui.heading("Câmera");
+        vector_input(ui, "VRP (posição da câmera)", &mut self.vrp);
+        vector_input(ui, "P", &mut self.p);
+        vector_input(ui, "Y", &mut self.y);
 
         ui.heading("Cores");
         ui.horizontal( |ui| {
@@ -147,15 +163,7 @@ impl App {
             ui.color_edit_button_srgba_unmultiplied(&mut self.secondary_color);
         });
 
-        ui.collapsing("Câmera", |ui| {
-            vector_input(ui, "VRP (posição da câmera)", &mut self.vrp);
-            vector_input(ui, "P", &mut self.p);
-            vector_input(ui, "Y", &mut self.y);
-        });
 
-        ui.collapsing("Iluminação", |ui| {
-            vector_input(ui, "L (posição da lâmpada)", &mut self.l);
-        });
 
         ui.separator();
 

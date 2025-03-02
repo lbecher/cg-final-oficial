@@ -16,9 +16,11 @@ pub struct Face {
     pub edges: [usize; 4],
     pub visible: bool,
     pub normal: Vec3,
+    pub centroid: Vec3,
 }
 
 impl Face {
+    /// Calcula a normal da face.
     pub fn calc_normal(&mut self, vertices: &Vec<Vec3>) {
         let a = vertices[self.vertices[0]];
         let b = vertices[self.vertices[1]];
@@ -28,6 +30,15 @@ impl Face {
         let ab = c - a;
 
         self.normal = ab.cross(&ac).normalize();
+    }
+
+    /// Calcula o centroide da face.
+    pub fn calc_centroid(&mut self, vertices: &Vec<Vec3>) {
+        let mut centroid = Vec3::zeros();
+        for i in 0..3 {
+            centroid = centroid + vertices[self.vertices[i]];
+        }
+        self.centroid = centroid / 3.0
     }
 }
 
@@ -363,13 +374,13 @@ impl Object {
                 // Armazenamos os índices das arestas para poder
                 // associar a face para obtermos o resultado do teste
                 // de visibilidade para atribuir a cor correta.
-                let mut face = Face {
+                let face = Face {
                     vertices: [a_index, b_index, c_index, d_index, a_index],
                     edges: [ab_index, cb_index, dc_index, da_index],
                     visible: false,
                     normal: Vec3::zeros(),
+                    centroid: Vec3::zeros(),
                 };
-                face.calc_normal(&self.vertices);
                 self.faces.push(face);
             }
         }

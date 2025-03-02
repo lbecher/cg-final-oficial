@@ -33,17 +33,26 @@ pub struct Viewport {
     pub vmax: f32,
 }
 
+pub struct Light {
+    pub l: Vec3,
+    pub il: Vec3,
+    pub ila: Vec3,
+    pub n: f32,
+}
+
 pub struct Render {
     pub shader_type: ShaderType,
     pub camera: Camera,
     pub window: Window,
     pub viewport: Viewport,
+    pub light: Light,
     pub m_sru_srt: Mat4,
     pub m_srt_sru: Mat4,
     zbuffer: Vec<f32>,
     pub buffer: Vec<u8>,
     pub buffer_width: usize,
     pub buffer_height: usize,
+    pub visibility_filter: bool,
 }
 
 impl Default for Render {
@@ -66,6 +75,12 @@ impl Default for Render {
             vmin: 0.0,
             vmax: GUI_VIEWPORT_HEIGHT - 1.0,
         };
+        let light = Light {
+            l: Vec3::new(300.0, 0.0, 0.0),
+            il: Vec3::new(0.0, 200.0, 0.0),
+            ila: Vec3::new(100.0, 0.0, 0.0),
+            n: 2.0,
+        };
 
         let m_sru_srt = Mat4::identity();
         let m_srt_sru = Mat4::identity();
@@ -81,12 +96,14 @@ impl Default for Render {
             camera,
             window,
             viewport,
+            light,
             m_sru_srt,
             m_srt_sru,
             zbuffer,
             buffer,
             buffer_width,
             buffer_height,
+            visibility_filter: false,
         };
 
         obj.calc_sru_srt_matrix();
@@ -103,29 +120,20 @@ impl Render {
     }
 
     /// Calcula o teste de visibilidade das arestas da malha.
-    fn calc_normal_test(
+    fn calc_visibility(
         &self,
-        object: &mut Object,
+        face: &mut Face,
+        edges: &mut Vec<Edge>,
     ) {
-        for face in object.faces.iter() {
-            let a: Vec3 = object.vertices[face.vertices[0]];
-            let b: Vec3 = object.vertices[face.vertices[1]];
-            let c: Vec3 = object.vertices[face.vertices[2]];
+        let o: Vec3 = (self.camera.vrp - face.centroid).normalize();
+        let n: Vec3 = face.normal;
+        let visibility = o.dot(&n) > 0.0;
 
-            let centroid: Vec3 = Vec3::new(
-                (a.x + b.x + c.x) / 3.0,
-                (a.y + b.y + c.y) / 3.0,
-                (a.z + b.z + c.z) / 3.0,
-            );
-            let no: Vec3 = (self.camera.vrp - centroid).normalize();
-
-            let visivel: bool = face.normal.dot(&no) > 0.0;
-
-            object.edges[face.edges[0]].visible = visivel;
-            object.edges[face.edges[1]].visible = visivel;
-            object.edges[face.edges[2]].visible = visivel;
-            object.edges[face.edges[3]].visible = visivel;
-        }
+        face.visible = visibility;
+        edges[face.edges[0]].visible = visibility;
+        edges[face.edges[1]].visible = visibility;
+        edges[face.edges[2]].visible = visibility;
+        edges[face.edges[3]].visible = visibility;
     }
 
     /// Calcula a matriz de transformação de coordenadas em SRU para SRC.
@@ -279,7 +287,7 @@ impl Render {
                 self.render_wireframe(object, primary_edge_color, secondary_edge_color);
             }
             ShaderType::Flat => {
-                self.render_constant(object);
+                self.render_flat(object);
             }
             ShaderType::Gouraud => {
                 self.render_gouraud(object);
@@ -386,21 +394,29 @@ impl Render {
         primary_edge_color: [u8; 4],
         secondary_edge_color: [u8; 4],
     ) {
+        for face in object.faces.iter_mut() {
+            face.calc_normal(&object.vertices);
+            face.calc_centroid(&object.vertices);
+        }
+
         let vertices_srt = self.calc_srt_convertions(&object.vertices);
 
-        object.calc_normals();
-        self.calc_normal_test(object);
-
+        // Ordena as faces da malha de acordo com a profundidade média dos vértices
         let mut faces = object.faces.clone();
         faces.sort_by(|a, b| {
             let a_z = (vertices_srt[a.vertices[0]].z + vertices_srt[a.vertices[1]].z + vertices_srt[a.vertices[2]].z + vertices_srt[a.vertices[3]].z) / 4.0;
             let b_z = (vertices_srt[b.vertices[0]].z + vertices_srt[b.vertices[1]].z + vertices_srt[b.vertices[2]].z + vertices_srt[b.vertices[3]].z) / 4.0;
             a_z.partial_cmp(&b_z).unwrap()
         });
-        faces.reverse();
 
         // Para cada face, calcula as interseções da scanline
-        for face in faces.iter() {
+        for face in faces.iter_mut() {
+            self.calc_visibility(face, &mut object.edges);
+
+            if self.visibility_filter && !face.visible {
+                continue;
+            }
+
             let intersections = Self::calc_intersections(&vertices_srt, face);
 
             // Para cada scanline i
@@ -457,12 +473,128 @@ impl Render {
         self.draw_wireframe_edges(&vertices_srt, &object.edges, primary_edge_color, secondary_edge_color);
     }
 
-    fn render_constant(
+
+    /// Calcula a cor de preenchimento da face.
+    fn calc_color(
+        &self,
+        ka: &Vec3,
+        kd: &Vec3,
+        ks: &Vec3,
+
+        // O ponto em que a iluminação será calculada
+        // Constante -> Centroide da face
+        // Gouraud -> Um vértice da face
+        // Phong -> Um pixel da face
+        position: &Vec3,
+        direction: &Vec3,
+        normal: &Vec3,
+    ) -> [u8; 4] {
+        let mut it: Vec3 = Vec3::zeros();
+
+        let ln: Vec3 = (self.light.l - position).normalize();
+        let id_dot = normal.dot(&ln);
+        let r: Vec3 = 2.0 * id_dot * normal - ln;
+        let is_dot = r.dot(direction);
+
+        for i in 0..3 {
+            let ia = self.light.ila[i] * ka[i];
+            it[i] += ia;
+
+            if id_dot > 0.0 {
+                let id = self.light.il[i] * kd[i] * id_dot;
+                it[i] += id;
+
+                if is_dot > 0.0 {
+                    let is = self.light.il[i] * ks[i] * is_dot.powf(self.light.n);
+                    it[i] += is;
+                };
+            }
+
+            if it[i] < 0.0 {
+                it[i] = 0.0;
+            } else if it[i] > 255.0 {
+                it[i] = 255.0;
+            }
+        }
+
+        [it[0] as u8, it[1] as u8, it[2] as u8, 255]
+    }
+
+    fn render_flat(
         &mut self,
         object: &mut Object,
     ) {
         let vertices_srt = self.calc_srt_convertions(&object.vertices);
-        todo!();
+
+        let ka: Vec3 = object.ka;
+        let kd: Vec3 = object.kd;
+        let ks: Vec3 = object.ks;
+
+        for face in &mut object.faces {
+            face.calc_normal(&object.vertices);
+            face.calc_centroid(&object.vertices);
+
+            if self.visibility_filter {
+                self.calc_visibility(face, &mut object.edges);
+                if !face.visible {
+                    continue;
+                }
+            }
+
+            let direction: Vec3 = (self.camera.vrp - face.centroid).normalize();
+            let color = self.calc_color(&ka, &kd, &ks, &face.centroid, &direction, &face.normal);
+
+            let intersections = Self::calc_intersections(&vertices_srt, face);
+
+            // Para cada scanline i
+            for (i, scaline_intersections) in intersections.iter() {
+                if scaline_intersections.len() < 2 {
+                    continue;
+                }
+
+                if *i >= self.buffer_height as usize {
+                    continue;
+                }
+
+                let mut counter = 0;
+
+                // Para cada par de interseções da scanline
+                while counter < scaline_intersections.len() {
+                    let x0: usize = scaline_intersections[counter].0.ceil() as usize;
+                    let x1: usize = scaline_intersections[counter + 1].0.floor() as usize;
+                    let z0: f32 = scaline_intersections[counter].1;
+                    let z1: f32 = scaline_intersections[counter + 1].1;
+
+                    counter += 2;
+
+                    if x1 < x0 {
+                        continue;
+                    }
+
+                    let dx = (x1 - x0) as f32;
+                    let dz = z1 - z0;
+                    let tz = dz / dx;
+
+                    let mut z: f32 = z0;
+
+                    // Para cada pixel na scanline
+                    for j in x0..=x1 {
+                        if j >= self.buffer_width {
+                            continue;
+                        }
+
+                        let z_index = i * self.buffer_width + j;
+
+                        if z > self.zbuffer[z_index] {
+                            self.paint(*i, j, color);
+                            self.zbuffer[z_index] = z;
+                        }
+
+                        z += tz;
+                    }
+                }
+            }
+        }
     }
 
     fn render_gouraud(
