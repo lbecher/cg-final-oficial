@@ -41,7 +41,7 @@ impl Default for App {
         let kd: Vec3 = Vec3::new(0.7, 0.0, 0.0);
         let ks: Vec3 = Vec3::new(0.5, 0.0, 0.0);
         let n: f32 = 2.0;
-        objects.push(Object::new(100, 100, 150,150, 3, ka, kd, ks, n));
+        objects.push(Object::new(4, 4, 8,8, 3, ka, kd, ks, n));
         objects[0].scale(100.0);
         //objects[0].translate(&Vec3::new(300.0, 200.0, 0.0));
 
@@ -218,10 +218,11 @@ impl App {
 
                 if point_response.dragged() {
                     let drag_delta: Vec2 = point_response.drag_delta();
-                    let drag_delta_sru: Mat4x1 = m_srt_sru * Mat4x1::new(drag_delta.x, -drag_delta.y, 0.0, 1.0);
+                    let mut drag_delta_sru: Mat4x1 = m_srt_sru * Mat4x1::new(drag_delta.x, -drag_delta.y, 0.0, 1.0);
 
                     point += drag_delta;
-                    control_points[i] += mat4x1_to_vec3(&drag_delta_sru);
+                    control_points[i].x += drag_delta.x;
+                    control_points[i].y -= drag_delta.y;
 
                     dragged = true;
                 }

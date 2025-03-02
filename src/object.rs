@@ -15,6 +15,20 @@ pub struct Face {
     pub vertices: [usize; 5],
     pub edges: [usize; 4],
     pub visible: bool,
+    pub normal: Vec3,
+}
+
+impl Face {
+    pub fn calc_normal(&mut self, vertices: &Vec<Vec3>) {
+        let a = vertices[self.vertices[0]];
+        let b = vertices[self.vertices[1]];
+        let c = vertices[self.vertices[2]];
+
+        let ac = b - a;
+        let ab = c - a;
+
+        self.normal = ab.cross(&ac).normalize();
+    }
 }
 
 /// Estrutura para armazenar uma superfície BSpline.
@@ -349,11 +363,14 @@ impl Object {
                 // Armazenamos os índices das arestas para poder
                 // associar a face para obtermos o resultado do teste
                 // de visibilidade para atribuir a cor correta.
-                self.faces.push(Face {
+                let mut face = Face {
                     vertices: [a_index, b_index, c_index, d_index, a_index],
-                    edges: [da_index, ab_index, cb_index, dc_index],
+                    edges: [ab_index, cb_index, dc_index, da_index],
                     visible: false,
-                });
+                    normal: Vec3::zeros(),
+                };
+                face.calc_normal(&self.vertices);
+                self.faces.push(face);
             }
         }
     }
@@ -573,6 +590,13 @@ impl Object {
             }
 
             *control_points = new_control_points;
+        }
+    }
+
+    /// Calcula as normais das faces.
+    pub fn calc_normals(&mut self) {
+        for face in &mut self.faces {
+            face.calc_normal(&self.vertices);
         }
     }
 }
