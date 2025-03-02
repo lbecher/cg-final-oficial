@@ -4,7 +4,7 @@ use eframe::egui::{pos2, CentralPanel, Color32, ColorImage, Context, Pos2, Rect,
 use crate::app::vector_input::*;
 use crate::constants::*;
 use crate::object::Object;
-use crate::render::Render;
+use crate::render::*;
 use crate::types::*;
 
 pub struct App {
@@ -41,7 +41,7 @@ impl Default for App {
         let kd: Vec3 = Vec3::new(0.7, 0.0, 0.0);
         let ks: Vec3 = Vec3::new(0.5, 0.0, 0.0);
         let n: f32 = 2.0;
-        objects.push(Object::new(5, 5, 20,20, 3, ka, kd, ks, n));
+        objects.push(Object::new(4, 4, 8,8, 3, ka, kd, ks, n));
         objects[0].scale(100.0);
         //objects[0].translate(&Vec3::new(300.0, 200.0, 0.0));
 
@@ -112,10 +112,6 @@ impl App {
     }
 
     pub fn side_panel_content(&mut self, ui: &mut Ui) {
-        ui.heading("Tema");
-        ui.radio_value(&mut self.theme, Theme::Light, "Claro");
-        ui.radio_value(&mut self.theme, Theme::Dark, "Escuro");
-
         ui.heading("Projeto");
         if ui.button("Salvar projeto").clicked() {
             //self.save_objects();
@@ -123,8 +119,24 @@ impl App {
         if ui.button("Carregar projeto").clicked() {
            // self.load_objects();
         }
+
         ui.separator();
 
+        ui.heading("Tema");
+        ui.radio_value(&mut self.theme, Theme::Light, "Claro");
+        ui.radio_value(&mut self.theme, Theme::Dark, "Escuro");
+
+        ui.separator();
+
+        ui.heading("Sombreamento");
+        ui.radio_value(&mut self.render.shader_type, ShaderType::Wireframe, "Wireframe");
+        ui.radio_value(&mut self.render.shader_type, ShaderType::Flat, "Flate");
+        ui.radio_value(&mut self.render.shader_type, ShaderType::Gouraud, "Gouraud");
+        ui.radio_value(&mut self.render.shader_type, ShaderType::Phong, "Phong");
+
+        ui.separator();
+
+        ui.heading("Cores");
         ui.horizontal( |ui| {
             ui.label("Cor primaria:");
             ui.color_edit_button_srgba_unmultiplied(&mut self.primary_color);
@@ -206,10 +218,11 @@ impl App {
 
                 if point_response.dragged() {
                     let drag_delta: Vec2 = point_response.drag_delta();
-                    let drag_delta_sru: Mat4x1 = m_srt_sru * Mat4x1::new(drag_delta.x, -drag_delta.y, 0.0, 1.0);
+                    let mut drag_delta_sru: Mat4x1 = m_srt_sru * Mat4x1::new(drag_delta.x, -drag_delta.y, 0.0, 1.0);
 
                     point += drag_delta;
-                    control_points[i] += mat4x1_to_vec3(&drag_delta_sru);
+                    control_points[i].x += drag_delta.x;
+                    control_points[i].y -= drag_delta.y;
 
                     dragged = true;
                 }

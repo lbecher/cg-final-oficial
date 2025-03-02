@@ -8,7 +8,7 @@ use crate::types::*;
 #[derive(Clone, PartialEq)]
 pub enum ShaderType {
     Wireframe,
-    Constant,
+    Flat,
     Gouraud,
     Phong,
 }
@@ -50,7 +50,7 @@ impl Default for Render {
     fn default() -> Self {
         let shader_type = ShaderType::Wireframe;
         let camera = Camera {
-            vrp: Vec3::new(0.0, 0.0, 40.0),
+            vrp: Vec3::new(-2.0, 1.0, 40.0),
             p: Vec3::new(0.0, 0.0, 0.0),
             y: Vec3::new(0.0, 1.0, 0.0),
         };
@@ -74,7 +74,7 @@ impl Default for Render {
         let buffer_height = GUI_VIEWPORT_HEIGHT as usize;
 
         let buffer = vec![0; buffer_width * buffer_height * 4];
-        let zbuffer = vec![INFINITY; buffer_width * buffer_height];
+        let zbuffer = vec![-INFINITY; buffer_width * buffer_height];
 
         let mut obj = Self {
             shader_type,
@@ -99,7 +99,7 @@ impl Render {
     /// Limpa os buffers de imagem e profundidade.
     pub fn clean_buffers(&mut self) {
         self.buffer = vec![0; self.buffer.len()];
-        self.zbuffer = vec![INFINITY; self.zbuffer.len()];
+        self.zbuffer = vec![-INFINITY; self.zbuffer.len()];
     }
 
     /// Calcula o teste de visibilidade das arestas da malha.
@@ -112,10 +112,6 @@ impl Render {
             let b: Vec3 = object.vertices[face.vertices[1]];
             let c: Vec3 = object.vertices[face.vertices[2]];
 
-            let bc: Vec3 = Vec3::new(c.x - b.x, c.y - b.y, c.z - b.z);
-            let ba: Vec3 = Vec3::new(a.x - b.x, a.y - b.y, a.z - b.z);
-            let nn: Vec3 = bc.cross(&ba).normalize();
-
             let centroid: Vec3 = Vec3::new(
                 (a.x + b.x + c.x) / 3.0,
                 (a.y + b.y + c.y) / 3.0,
@@ -123,7 +119,7 @@ impl Render {
             );
             let no: Vec3 = (self.camera.vrp - centroid).normalize();
 
-            let visivel: bool = nn.dot(&no) > 0.0;
+            let visivel: bool = face.normal.dot(&no) > 0.0;
 
             object.edges[face.edges[0]].visible = visivel;
             object.edges[face.edges[1]].visible = visivel;
@@ -282,7 +278,7 @@ impl Render {
             ShaderType::Wireframe => {
                 self.render_wireframe(object, primary_edge_color, secondary_edge_color);
             }
-            ShaderType::Constant => {
+            ShaderType::Flat => {
                 self.render_constant(object);
             }
             ShaderType::Gouraud => {
@@ -356,7 +352,7 @@ impl Render {
             }
 
             let zbuffer_index = i * self.buffer_width + j;
-            if z < self.zbuffer[zbuffer_index] {
+            if z > self.zbuffer[zbuffer_index] {
                 self.paint(i, j, color);
                 self.zbuffer[zbuffer_index] = z;
             }
@@ -392,6 +388,7 @@ impl Render {
     ) {
         let vertices_srt = self.calc_srt_convertions(&object.vertices);
 
+        object.calc_normals();
         self.calc_normal_test(object);
 
         let mut faces = object.faces.clone();
@@ -445,7 +442,7 @@ impl Render {
 
                         let z_index = i * self.buffer_width + j;
 
-                        if z < self.zbuffer[z_index] {
+                        if z > self.zbuffer[z_index] {
                             let color = [0,0,0,0];
                             self.paint(*i, j, color);
                             self.zbuffer[z_index] = z;
