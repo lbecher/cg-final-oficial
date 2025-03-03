@@ -213,17 +213,17 @@ impl Object {
     }
 
     fn compute_basis(knots: &[f32], n: usize, res: usize, t: usize) -> Vec<f32> {
-        // Armazenaremos em basis[k * res + i] o valor de N_k(u_i)
         let mut basis = vec![0.0; (n + 1) * res];
-
-        // Intervalo total do parâmetro (ex.: para t=4, BSpline cúbica)
-        // (n + 2 - t) é a região 'válida' onde a spline é não-nula.
-        let increment = (n as f32 + 2.0 - t as f32) / res as f32;
-
+        let increment = (n as f32 + 2.0 - t as f32) / ((res - 1) as f32);
+        let epsilon = 1e-6;
         for i in 0..res {
-            let u = i as f32 * increment; // parâmetro u na i-ésima amostra
+            let raw_u = i as f32 * increment;
+            let u = if raw_u < knots[knots.len() - 1] {
+                raw_u
+            } else {
+                knots[knots.len() - 1] - epsilon
+            };
             for k in 0..=n {
-                // Chamamos spline_blend apenas uma vez por (k, i)
                 basis[k * res + i] = Self::spline_blend(k, t, knots, u);
             }
         }

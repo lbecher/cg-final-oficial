@@ -6,8 +6,8 @@ NI = 2
 NJ = 2
 TI = 3
 TJ = 3
-RESOLUTIONI = 3
-RESOLUTIONJ = 3
+RESOLUTIONI = 6
+RESOLUTIONJ = 6
 
 def spline_knots(knots, n, t):
     for j in range(n + t + 1):
@@ -41,20 +41,25 @@ for i in range(NI + 1):
     for j in range(NJ + 1):
         inp[i, j] = np.array([i, j, np.random.uniform(-1.0, 1.0)])
 
-increment_i = (NI - TI + 2) / RESOLUTIONI
-increment_j = (NJ - TJ + 2) / RESOLUTIONJ
+increment_i = (NI - TI + 2) / (RESOLUTIONI - 1)
+increment_j = (NJ - TJ + 2) / (RESOLUTIONJ - 1)
 
 spline_knots(knots_i, NI, TI)
 spline_knots(knots_j, NJ, TJ)
 
+epsilon = 1e-6
 interval_i = 0.0
 for i in range(RESOLUTIONI):
     interval_j = 0.0
+    # Clamp interval_i
+    param_i = interval_i if interval_i < knots_i[-1] else knots_i[-1] - epsilon
     for j in range(RESOLUTIONJ):
+        # Clamp interval_j
+        param_j = interval_j if interval_j < knots_j[-1] else knots_j[-1] - epsilon
         for ki in range(NI + 1):
             for kj in range(NJ + 1):
-                bi = spline_blend(ki, TI, knots_i, interval_i)
-                bj = spline_blend(kj, TJ, knots_j, interval_j)
+                bi = spline_blend(ki, TI, knots_i, param_i)
+                bj = spline_blend(kj, TJ, knots_j, param_j)
                 outp[i, j] += inp[ki, kj] * (bi * bj)
         interval_j += increment_j
     interval_i += increment_i
