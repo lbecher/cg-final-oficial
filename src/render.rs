@@ -157,6 +157,12 @@ impl Render {
     /// Calcula a matriz de projeção axonométrica isométrica.
     fn calc_proj_matrix(&self) -> Mat4 {
         Mat4::identity()
+        /*Mat4::new(
+            (2.0_f32).sqrt() / 2.0,  0.0,                     (2.0_f32).sqrt() / 2.0,  0.0,
+            (6.0_f32).sqrt() / 6.0,  (3.0_f32).sqrt() / 3.0,  -(6.0_f32).sqrt() / 6.0, 0.0,
+            -(3.0_f32).sqrt() / 3.0, (6.0_f32).sqrt() / 6.0,  (6.0_f32).sqrt() / 6.0,  0.0,
+            0.0,                     0.0,                     0.0,                     1.0,
+        )*/
     }
 
     /// Calcula a matriz de transformação janela/porta de visão.
@@ -243,6 +249,97 @@ impl Render {
                 x += tx;
                 y += 1.0;
                 z += tz;
+            }
+        }
+
+        for (_, intersections) in intersections.iter_mut() {
+            intersections.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        }
+
+        intersections
+    }
+
+    /// Calcula as interseções das arestas da face com as linhas horizontais.
+    pub fn calc_intersections_for_gouraud(
+        vertices_srt: &[Vec3],
+        intensities: &[Vec3],
+        face: &Face,
+    ) -> HashMap<usize, Vec<(f32, f32, f32, f32, f32)>> {
+        let mut intersections = HashMap::new();
+
+        for i in 0..4 {
+            let mut x0 = vertices_srt[face.vertices[i]].x;
+            let mut y0 = vertices_srt[face.vertices[i]].y.round();
+            let mut z0 = vertices_srt[face.vertices[i]].z;
+            let mut x1 = vertices_srt[face.vertices[i + 1]].x;
+            let mut y1 = vertices_srt[face.vertices[i + 1]].y.round();
+            let mut z1 = vertices_srt[face.vertices[i + 1]].z;
+
+            let mut r0 = intensities[face.vertices[i]].x;
+            let mut g0 = intensities[face.vertices[i]].y;
+            let mut b0 = intensities[face.vertices[i]].z;
+            let mut r1 = intensities[face.vertices[i + 1]].x;
+            let mut g1 = intensities[face.vertices[i + 1]].y;
+            let mut b1 = intensities[face.vertices[i + 1]].z;
+
+            if y0 > y1 {
+                let x = x0;
+                x0 = x1;
+                x1 = x;
+
+                let y = y0;
+                y0 = y1;
+                y1 = y;
+
+                let z = z0;
+                z0 = z1;
+                z1 = z;
+
+                let r = r0;
+                r0 = r1;
+                r1 = r;
+
+                let g = g0;
+                g0 = g1;
+                g1 = g;
+
+                let b = b0;
+                b0 = b1;
+                b1 = b;
+            }
+
+            let dx = x1 - x0;
+            let dy = y1 - y0;
+            let dz = z1 - z0;
+            let dr = r1 - r0;
+            let dg = g1 - g0;
+            let db = b1 - b0;
+
+            let tx = dx / dy;
+            let tz = dz / dy;
+            let tr = dr / dy;
+            let tg = dg / dy;
+            let tb = db / dy;
+
+            let mut x = x0;
+            let mut y = y0.round();
+            let mut z = z0;
+            let mut r = r0;
+            let mut g = g0;
+            let mut b = b0;
+
+            while y < y1 {
+                if y >= 0.0 {
+                    let x_intersections = intersections.entry(y as usize)
+                        .or_insert(Vec::new());
+                    x_intersections.push((x, z, r, g, b));
+                }
+                x += tx;
+                y += 1.0;
+                z += tz;
+                r += tr;
+                g += tg;
+                b += tb;
             }
         }
 
@@ -627,7 +724,6 @@ impl Render {
             }
 
             if count > 0 {
-                normal /= count as f32;
                 normal = normal.normalize();
             }
 
@@ -645,7 +741,7 @@ impl Render {
                 }
             }
 
-            let intersections = Self::calc_intersections(&vertices_srt, face);
+            let intersections = Self::calc_intersections_for_gouraud(&vertices_srt, &vertex_intensities, face);
 
             // For each scanline
             for (i, scaline_intersections) in intersections.iter() {
@@ -662,9 +758,16 @@ impl Render {
                 // For each pair of intersections
                 while counter < scaline_intersections.len() {
                     let x0: usize = scaline_intersections[counter].0.ceil() as usize;
-                    let x1: usize = scaline_intersections[counter + 1].0.floor() as usize;
                     let z0: f32 = scaline_intersections[counter].1;
+                    let x1: usize = scaline_intersections[counter + 1].0.floor() as usize;
                     let z1: f32 = scaline_intersections[counter + 1].1;
+
+                    let r0: f32 = scaline_intersections[counter].2;
+                    let g0: f32 = scaline_intersections[counter].3;
+                    let b0: f32 = scaline_intersections[counter].4;
+                    let r1: f32 = scaline_intersections[counter + 1].2;
+                    let g1: f32 = scaline_intersections[counter + 1].3;
+                    let b1: f32 = scaline_intersections[counter + 1].4;
 
                     counter += 2;
 
@@ -674,16 +777,18 @@ impl Render {
 
                     let dx = (x1 - x0) as f32;
                     let dz = z1 - z0;
+                    let dr = r1 - r0;
+                    let dg = g1 - g0;
+                    let db = b1 - b0;
                     let tz = dz / dx;
+                    let tr = dr / dx;
+                    let tg = dg / dx;
+                    let tb = db / dx;
 
                     let mut z: f32 = z0;
-
-                    // Interpolate intensities
-                    let intensity0 = vertex_intensities[face.vertices[0]];
-                    let intensity1 = vertex_intensities[face.vertices[1]];
-                    let mut intensity = intensity0;
-
-                    let intensity_step = (intensity1 - intensity0) / dx;
+                    let mut r: f32 = r0;
+                    let mut g: f32 = g0;
+                    let mut b: f32 = b0;
 
                     // For each pixel in the scanline
                     for j in x0..=x1 {
@@ -695,9 +800,9 @@ impl Render {
 
                         if z > self.zbuffer[z_index] {
                             let color = [
-                                intensity[0] as u8,
-                                intensity[1] as u8,
-                                intensity[2] as u8,
+                                r as u8,
+                                g as u8,
+                                b as u8,
                                 255,
                             ];
                             self.paint(*i, j, color);
@@ -705,7 +810,9 @@ impl Render {
                         }
 
                         z += tz;
-                        intensity += intensity_step;
+                        r += tr;
+                        g += tg;
+                        b += tb;
                     }
                 }
             }

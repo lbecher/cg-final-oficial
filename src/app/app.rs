@@ -10,6 +10,7 @@ use crate::types::*;
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
 use serde_json;
+use std::time::{Duration, Instant};
 
 pub struct App {
     objects: Vec<Object>,
@@ -29,6 +30,8 @@ pub struct App {
     l: VectorInputData,
     li: ColorInputData,
 
+    render_duration: Duration,
+
     theme: Theme,
 }
 
@@ -45,7 +48,7 @@ impl Default for App {
         let kd: Vec3 = Vec3::new(0.7, 0.9, 0.4);
         let ks: Vec3 = Vec3::new(0.5, 0.1, 0.0);
         let n: f32 = 2.0;
-        objects.push(Object::new(4, 4, 50,50, 3, ka, kd, ks, n));
+        objects.push(Object::new(4, 4, 8,8, 3, ka, kd, ks, n));
         objects[0].scale(100.0);
         //objects[0].translate(&Vec3::new(300.0, 200.0, 0.0));
 
@@ -66,6 +69,8 @@ impl Default for App {
             l: VectorInputData::default(),
             li: ColorInputData::default(),
             lia: ColorInputData::default(),
+
+            render_duration: Duration::default(),
 
             theme: Theme::Dark,
         };
@@ -96,7 +101,7 @@ impl EguiApp for App {
 
 impl App {
     pub fn redraw(&mut self) {
-        //let start = Instant::now();
+        let start = Instant::now();
 
         self.render.clean_buffers();
         for object in &mut self.objects {
@@ -109,7 +114,7 @@ impl App {
         let size = [self.render.buffer_width, self.render.buffer_height];
         self.image = ColorImage::from_rgba_premultiplied(size, &buffer);
 
-        //self.duration = start.elapsed();
+        self.render_duration = start.elapsed();
     }
 
     pub fn save_objects(&self, path: &str) -> io::Result<()> {
@@ -159,6 +164,7 @@ impl App {
         ui.radio_value(&mut self.render.shader_type, ShaderType::Flat, "Constante");
         ui.radio_value(&mut self.render.shader_type, ShaderType::Gouraud, "Gouraud");
         ui.radio_value(&mut self.render.shader_type, ShaderType::Phong, "Phong");
+        ui.label(format!("Tempo de renderização: {:?} ms", self.render_duration.as_millis()));
         ui.checkbox(&mut self.render.visibility_filter, "Filtro de visibilidade");
         if self.render.shader_type != old_shader || self.render.visibility_filter != old_visibility_filter {
             self.redraw();
