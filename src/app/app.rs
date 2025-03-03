@@ -45,7 +45,7 @@ impl Default for App {
         let kd: Vec3 = Vec3::new(0.7, 0.9, 0.4);
         let ks: Vec3 = Vec3::new(0.5, 0.1, 0.0);
         let n: f32 = 2.0;
-        objects.push(Object::new(4, 4, 8,8, 3, ka, kd, ks, n));
+        objects.push(Object::new(4, 4, 50,50, 3, ka, kd, ks, n));
         objects[0].scale(100.0);
         //objects[0].translate(&Vec3::new(300.0, 200.0, 0.0));
 
@@ -155,7 +155,7 @@ impl App {
         ui.heading("Sombreamento");
         let old_shader = self.render.shader_type.clone();
         let old_visibility_filter = self.render.visibility_filter;
-        ui.radio_value(&mut self.render.shader_type, ShaderType::Wireframe, "Arramado");
+        ui.radio_value(&mut self.render.shader_type, ShaderType::Wireframe, "Aramado");
         ui.radio_value(&mut self.render.shader_type, ShaderType::Flat, "Constante");
         ui.radio_value(&mut self.render.shader_type, ShaderType::Gouraud, "Gouraud");
         ui.radio_value(&mut self.render.shader_type, ShaderType::Phong, "Phong");
