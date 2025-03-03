@@ -602,7 +602,114 @@ impl Render {
         object: &mut Object,
     ) {
         let vertices_srt = self.calc_srt_convertions(&object.vertices);
-        todo!();
+
+        let ka: Vec3 = object.ka;
+        let kd: Vec3 = object.kd;
+        let ks: Vec3 = object.ks;
+
+        // Calculate normals and centroids for each face
+        for face in &mut object.faces {
+            face.calc_normal(&object.vertices);
+            face.calc_centroid(&object.vertices);
+        }
+
+        // Calculate vertex intensities
+        let mut vertex_intensities = vec![Vec3::zeros(); object.vertices.len()];
+        for (i, vertex) in object.vertices.iter().enumerate() {
+            let mut normal = Vec3::zeros();
+            let mut count = 0;
+
+            for face in &object.faces {
+                if face.vertices.contains(&i) {
+                    normal += face.normal;
+                    count += 1;
+                }
+            }
+
+            if count > 0 {
+                normal /= count as f32;
+                normal = normal.normalize();
+            }
+
+            let direction = (self.camera.vrp - *vertex).normalize();
+            let color = self.calc_color(&ka, &kd, &ks, vertex, &direction, &normal);
+            vertex_intensities[i] = Vec3::new(color[0] as f32, color[1] as f32, color[2] as f32);
+        }
+
+        // Render each face
+        for face in &mut object.faces {
+            if self.visibility_filter {
+                self.calc_visibility(face, &mut object.edges);
+                if !face.visible {
+                    continue;
+                }
+            }
+
+            let intersections = Self::calc_intersections(&vertices_srt, face);
+
+            // For each scanline
+            for (i, scaline_intersections) in intersections.iter() {
+                if scaline_intersections.len() < 2 {
+                    continue;
+                }
+
+                if *i >= self.buffer_height as usize {
+                    continue;
+                }
+
+                let mut counter = 0;
+
+                // For each pair of intersections
+                while counter < scaline_intersections.len() {
+                    let x0: usize = scaline_intersections[counter].0.ceil() as usize;
+                    let x1: usize = scaline_intersections[counter + 1].0.floor() as usize;
+                    let z0: f32 = scaline_intersections[counter].1;
+                    let z1: f32 = scaline_intersections[counter + 1].1;
+
+                    counter += 2;
+
+                    if x1 < x0 {
+                        continue;
+                    }
+
+                    let dx = (x1 - x0) as f32;
+                    let dz = z1 - z0;
+                    let tz = dz / dx;
+
+                    let mut z: f32 = z0;
+
+                    // Interpolate intensities
+                    let intensity0 = vertex_intensities[face.vertices[0]];
+                    let intensity1 = vertex_intensities[face.vertices[1]];
+                    let mut intensity = intensity0;
+
+                    let intensity_step = (intensity1 - intensity0) / dx;
+
+                    // For each pixel in the scanline
+                    for j in x0..=x1 {
+                        if j >= self.buffer_width {
+                            continue;
+                        }
+
+                        let z_index = i * self.buffer_width + j;
+
+                        if z > self.zbuffer[z_index] {
+                            let color = [
+                                intensity[0] as u8,
+                                intensity[1] as u8,
+                                intensity[2] as u8,
+                                255,
+                            ];
+                            self.paint(*i, j, color);
+                            self.zbuffer[z_index] = z;
+                        }
+
+                        z += tz;
+                        intensity += intensity_step;
+                    }
+                }
+            }
+        }
     }
 
     fn render_phong(
