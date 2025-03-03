@@ -7,6 +7,9 @@ use crate::constants::*;
 use crate::object::Object;
 use crate::render::*;
 use crate::types::*;
+use std::fs::File;
+use std::io::{self, BufReader, BufWriter};
+use serde_json;
 
 pub struct App {
     objects: Vec<Object>,
@@ -109,13 +112,36 @@ impl App {
         //self.duration = start.elapsed();
     }
 
+    pub fn save_objects(&self, path: &str) -> io::Result<()> {
+        let file = File::create(path)?;
+        let writer = BufWriter::new(file);
+        serde_json::to_writer(writer, &self.objects)?;
+        Ok(())
+    }
+
+    pub fn load_objects(&mut self, path: &str) -> io::Result<()> {
+        let file = File::open(path)?;
+        let reader = BufReader::new(file);
+        self.objects = serde_json::from_reader(reader)?;
+        self.redraw();
+        Ok(())
+    }
+
     pub fn side_panel_content(&mut self, ui: &mut Ui) {
         ui.heading("Projeto");
         if ui.button("Salvar projeto").clicked() {
-            //self.save_objects();
+            if let Some(path) = rfd::FileDialog::new().save_file() {
+                if let Err(e) = self.save_objects(path.to_str().unwrap()) {
+                    eprintln!("Failed to save objects: {}", e);
+                }
+            }
         }
         if ui.button("Carregar projeto").clicked() {
-           // self.load_objects();
+            if let Some(path) = rfd::FileDialog::new().pick_file() {
+                if let Err(e) = self.load_objects(path.to_str().unwrap()) {
+                    eprintln!("Failed to load objects: {}", e);
+                }
+            }
         }
 
         ui.separator();
