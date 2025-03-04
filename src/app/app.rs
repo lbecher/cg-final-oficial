@@ -552,7 +552,7 @@ impl App {
         painter.image(texture_id, response.rect, uv, Color32::WHITE);
 
         if let Some(idx) = self.selected_object {
-            let m_srt_sru: Mat4 = self.render.m_srt_sru.clone();
+            let m_srt_sru = self.render.m_srt_sru.clone();
 
             let control_point_radius = 2.0;
             let control_points_srt: Vec<Vec3> = self.render.calc_srt_convertions(&self.objects[idx].control_points);
@@ -571,14 +571,9 @@ impl App {
                 let point_response = ui.interact(point_rect, point_id, Sense::drag());
 
                 if point_response.dragged() {
-                    let drag_delta = point_response.drag_delta();
-                    let old_srt = self.render.m_sru_srt * vec3_to_mat4x1(&control_points[i]);
-                    let mut new_srt = old_srt;
-                    new_srt.x += drag_delta.x;
-                    new_srt.y += drag_delta.y;
-
-                    let new_sru = self.render.m_srt_sru * new_srt;
-                    control_points[i] = mat4x1_to_vec3(&new_sru);
+                    let drag_delta: Vec2 = point_response.drag_delta();
+                    let drag_delta_sru: Mat4x1 = m_srt_sru * Mat4x1::new(drag_delta.x, -drag_delta.y, 0.0, 0.0);
+                    control_points[i] += mat4x1_to_vec3(&drag_delta_sru);
 
                     dragged = true;
                 }
