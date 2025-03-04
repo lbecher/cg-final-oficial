@@ -1,8 +1,9 @@
 use eframe::{App as EguiApp, Frame};
 use eframe::emath;
-use eframe::egui::{pos2, CentralPanel, Color32, ColorImage, Context, Pos2, Rect, ScrollArea, Sense, Shape, SidePanel,  TextureId, TextureOptions, Ui, Vec2};
+use eframe::egui::{pos2, CentralPanel, Color32, ColorImage, Context, Pos2, Rect, ScrollArea, Sense, Shape, SidePanel,  TextureId, TextureOptions, Ui, Vec2, TextEdit};
 use crate::app::color_input::*;
 use crate::app::vector_input::*;
+use crate::app::parse_input::*;
 use crate::constants::*;
 use crate::object::Object;
 use crate::render::*;
@@ -33,6 +34,10 @@ pub struct App {
     render_duration: Duration,
 
     theme: Theme,
+
+    scale_value: String,
+    translation_value: VectorInputData,
+    rotation_value: VectorInputData,
 }
 
 impl Default for App {
@@ -73,6 +78,10 @@ impl Default for App {
             render_duration: Duration::default(),
 
             theme: Theme::Dark,
+
+            scale_value: "1.0".to_string(),
+            translation_value: VectorInputData::default(),
+            rotation_value: VectorInputData::default(),
         };
 
         obj.redraw();
@@ -198,27 +207,140 @@ impl App {
         vector_input(ui, "P", &mut self.p);
         vector_input(ui, "Y", &mut self.y);
 
+        ui.separator();
 
+        ui.heading("Objetos");
+        for (i, object) in self.objects.iter().enumerate() {
+            if ui.selectable_label(self.selected_object == Some(i), format!("Objeto {}", i)).clicked() {
+                self.selected_object = Some(i);
+            }
+        }
 
         ui.separator();
 
-        if ui.button("Rodar X").clicked() {
+        ui.heading("Transformações");
+        if ui.button("Adicionar Objeto").clicked() {
+            let ka: Vec3 = Vec3::new(0.4, 0.4, 0.0);
+            let kd: Vec3 = Vec3::new(0.7, 0.9, 0.4);
+            let ks: Vec3 = Vec3::new(0.5, 0.1, 0.0);
+            let n: f32 = 2.0;
+            let mut new_object = Object::new(4, 4, 8, 8, 3, ka, kd, ks, n);
+            new_object.scale(100.0);
+            self.objects.push(new_object);
+            self.selected_object = Some(self.objects.len() - 1);
+            self.redraw();
+        }
+        if ui.button("Remover Objeto").clicked() {
             if let Some(idx) = self.selected_object {
-                self.objects[idx].rotate_x(0.1);
+                self.objects.remove(idx);
+                self.selected_object = None;
                 self.redraw();
             }
         }
-        if ui.button("Rodar Y").clicked() {
-            if let Some(idx) = self.selected_object {
-                self.objects[idx].rotate_y(0.1);
+
+        if let Some(idx) = self.selected_object {
+            ui.horizontal(|ui| {
+                if ui.button("Rodar X+").clicked() {
+                    self.objects[idx].rotate_x(0.1);
+                    self.redraw();
+                }
+                if ui.button("Rodar X-").clicked() {
+                    self.objects[idx].rotate_x(-0.1);
+                    self.redraw();
+                }
+            });
+            ui.horizontal(|ui| {
+                if ui.button("Rodar Y+").clicked() {
+                    self.objects[idx].rotate_y(0.1);
+                    self.redraw();
+                }
+                if ui.button("Rodar Y-").clicked() {
+                    self.objects[idx].rotate_y(-0.1);
+                    self.redraw();
+                }
+            });
+            ui.horizontal(|ui| {
+                if ui.button("Rodar Z+").clicked() {
+                    self.objects[idx].rotate_z(0.1);
+                    self.redraw();
+                }
+                if ui.button("Rodar Z-").clicked() {
+                    self.objects[idx].rotate_z(-0.1);
+                    self.redraw();
+                }
+            });
+
+            ui.separator();
+            ui.label("Rotação Manual");
+            vector_input(ui, "Rotação", &mut self.rotation_value);
+            if ui.button("Aplicar Rotação").clicked() {
+                self.objects[idx].rotate_x(self.rotation_value.x);
+                self.objects[idx].rotate_y(self.rotation_value.y);
+                self.objects[idx].rotate_z(self.rotation_value.z);
                 self.redraw();
             }
-        }
-        if ui.button("Rodar Z").clicked() {
-            if let Some(idx) = self.selected_object {
-                self.objects[idx].rotate_z(0.1);
+
+            ui.separator();
+            ui.label("Translação Manual");
+            vector_input(ui, "Translação", &mut self.translation_value);
+            if ui.button("Aplicar Translação").clicked() {
+                self.objects[idx].translate(&Vec3::new(self.translation_value.x, self.translation_value.y, self.translation_value.z));
                 self.redraw();
             }
+
+            ui.separator();
+            ui.label("Escala Manual");
+            ui.horizontal(|ui| {
+                ui.label("Escala:");
+                ui.add(TextEdit::singleline(&mut self.scale_value));
+            });
+            if ui.button("Aplicar Escala").clicked() {
+                if let Ok(scale) = self.scale_value.parse::<f32>() {
+                    self.objects[idx].scale(scale);
+                    self.redraw();
+                }
+            }
+
+            ui.horizontal(|ui| {
+                if ui.button("Transladar +X").clicked() {
+                    self.objects[idx].translate(&Vec3::new(10.0, 0.0, 0.0));
+                    self.redraw();
+                }
+                if ui.button("Transladar -X").clicked() {
+                    self.objects[idx].translate(&Vec3::new(-10.0, 0.0, 0.0));
+                    self.redraw();
+                }
+            });
+            ui.horizontal(|ui| {
+                if ui.button("Transladar +Y").clicked() {
+                    self.objects[idx].translate(&Vec3::new(0.0, 10.0, 0.0));
+                    self.redraw();
+                }
+                if ui.button("Transladar -Y").clicked() {
+                    self.objects[idx].translate(& Vec3::new(0.0, -10.0, 0.0));
+                    self.redraw();
+                }
+            });
+            ui.horizontal(|ui| {
+                if ui.button("Transladar +Z").clicked() {
+                    self.objects[idx].translate(&Vec3::new(0.0, 0.0, 10.0));
+                    self.redraw();
+                }
+                if ui.button("Transladar -Z").clicked() {
+                    self.objects[idx].translate(&Vec3::new(0.0, 0.0, -10.0));
+                    self.redraw();
+                }
+            });
+            ui.horizontal(|ui| {
+                if ui.button("Escalar +").clicked() {
+                    self.objects[idx].scale(1.1);
+                    self.redraw();
+                }
+                if ui.button("Escalar -").clicked() {
+                    self.objects[idx].scale(0.9);
+                    self.redraw();
+                }
+            });
         }
     }
 
