@@ -46,11 +46,11 @@ pub struct App {
     smoothness: String,
     smoothness_value: u8,
 
-    ka: VectorInputData,
+    ka: ColorInputData,
     ka_value: Vec3,
-    kd: VectorInputData,
+    kd: ColorInputData,
     kd_value: Vec3,
-    ks: VectorInputData,
+    ks: ColorInputData,
     ks_value: Vec3,
     n: String,
     n_value: f32,
@@ -78,24 +78,21 @@ impl Default for App {
         let kd_value: Vec3 = Vec3::new(0.7, 0.9, 0.4);
         let ks_value: Vec3 = Vec3::new(0.5, 0.1, 0.9);
         let n_value: f32 = 2.0;
-
-        let ka = VectorInputData::new(ka_value.x, ka_value.y, ka_value.z);
-        let kd = VectorInputData::new(kd_value.x, kd_value.y, kd_value.z);
-        let ks = VectorInputData::new(ks_value.x, ks_value.y, ks_value.z);
-        let n = n_value.to_string();
+        let ka = ColorInputData::new(ka_value.x, ka_value.y, ka_value.z);
+        let kd = ColorInputData::new(kd_value.x, kd_value.y, kd_value.z);
+        let ks = ColorInputData::new(ks_value.x, ks_value.y, ks_value.z);
+        let n = format!("N: {}", n_value);
 
         let ni_value = 4;
         let nj_value = 4;
         let resi_value = 8;
         let resj_value = 8;
-
-        let ni = "NI: ".to_string();
-        let nj = "NJ: ".to_string();
-        let resi = "Resolução I: ".to_string();
-        let resj = "Resolução J: ".to_string();
-
-        let smoothness = "Suavização: ".to_string();
-        let smoothness_value = 0;
+        let smoothness_value = 2;
+        let ni = format!("NI: {}", ni_value);
+        let nj = format!("NJ: {}", nj_value);
+        let resi = format!("RESI: {}", resi_value);
+        let resj = format!("RESJ: {}", resj_value);
+        let smoothness = format!("Passos: {}", smoothness_value);
 
         let mut obj = Self {
             objects,
@@ -266,40 +263,67 @@ impl App {
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
             ui.add(TextEdit::singleline(&mut self.nj)
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.smoothness)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            if let Some(idx) = self.selected_object {
+                if ui.button("Modificar objeto selecionado").clicked() {
+                    if self.parse_ni_nj_smoothness() {
+                        self.objects[idx].set_ni_nj(self.ni_value, self.nj_value, self.smoothness_value);
+                        redraw = true;
+                    }
+                }
+            }
         });
         ui.collapsing("Resolução", |ui| {
             ui.add(TextEdit::singleline(&mut self.resi)
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
             ui.add(TextEdit::singleline(&mut self.resj)
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            if let Some(idx) = self.selected_object {
+                if ui.button("Modificar objeto selecionado").clicked() {
+                    if self.parse_resi_resj() {
+                        self.objects[idx].set_resi_resj(self.resi_value, self.resj_value);
+                        redraw = true;
+                    }
+                }
+            }
         });
-        ui.collapsing("Suavização", |ui| {
-            ui.add(TextEdit::singleline(&mut self.smoothness)
+        ui.collapsing("Material", |ui| {
+            ui.label("Ka:");
+            ui.add(TextEdit::singleline(&mut self.ka.r)
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
-        });
-        ui.collapsing("KA", |ui| {
-            ui.add(TextEdit::singleline(&mut self.ka.x)
+            ui.add(TextEdit::singleline(&mut self.ka.g)
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.ka.y)
+            ui.add(TextEdit::singleline(&mut self.ka.b)
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.ka.z)
+            ui.label("Kd:");
+            ui.add(TextEdit::singleline(&mut self.kd.r)
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
-        });
-        ui.collapsing("KD", |ui| {
-            ui.add(TextEdit::singleline(&mut self.kd.x)
+            ui.add(TextEdit::singleline(&mut self.kd.g)
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.kd.y)
+            ui.add(TextEdit::singleline(&mut self.kd.b)
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.kd.z)
+            ui.label("Ks:");
+            ui.add(TextEdit::singleline(&mut self.ks.r)
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
-        });
-        ui.collapsing("KS", |ui| {
-            ui.add(TextEdit::singleline(&mut self.ks.x)
+            ui.add(TextEdit::singleline(&mut self.ks.g)
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.ks.y)
+            ui.add(TextEdit::singleline(&mut self.ks.b)
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.ks.z)
+            ui.label("N:");
+            ui.add(TextEdit::singleline(&mut self.n)
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            if let Some(idx) = self.selected_object {
+                if ui.button("Modificar objeto selecionado").clicked() {
+                    if self.parse_ka_kd_ks() {
+                        self.objects[idx].ka = self.ka_value;
+                        self.objects[idx].kd = self.kd_value;
+                        self.objects[idx].ks = self.ks_value;
+                        self.objects[idx].n = self.n_value;
+                        redraw = true;
+                    }
+                }
+            }
         });
         if ui.button("Criar novo objeto").clicked() {
             if self.parse_object_props() {
@@ -317,19 +341,6 @@ impl App {
         for i in 0..self.objects.len() {
             if ui.selectable_label(self.selected_object == Some(i), format!("Objeto {}", i)).clicked() {
                 self.selected_object = Some(i);
-            }
-        }
-        if let Some(idx) = self.selected_object {
-            if ui.button("Modificar objeto selecionado").clicked() {
-                if self.parse_object_props() {
-                    self.objects[idx].set_ni_nj_resi_resj(self.ni_value, self.nj_value, self.smoothness_value, self.resi_value, self.resj_value);
-                    self.objects[idx].ka = self.ka_value;
-                    self.objects[idx].kd = self.kd_value;
-                    self.objects[idx].ks = self.ks_value;
-                    self.objects[idx].n = self.n_value;
-                    self.objects[idx].scale(100.0);
-                    redraw = true;
-                }
             }
         }
         if ui.button("Remover objeto selecionado").clicked() {
@@ -588,21 +599,18 @@ impl App {
 
 impl App {
     fn parse_object_props(&mut self) -> bool {
-        let mut success = parse_input("NI:", &mut self.ni_value, &mut self.ni) ||
-            parse_input("NJ:", &mut self.nj_value, &mut self.nj) ||
-            parse_input("RESI:", &mut self.resi_value, &mut self.resi) ||
-            parse_input("RESJ:", &mut self.resj_value, &mut self.resj) ||
-            parse_input("Passos:", &mut self.smoothness_value, &mut self.smoothness) ||
-            parse_input("R:", &mut self.ka_value.x, &mut self.ka.x) ||
-            parse_input("G:", &mut self.ka_value.y, &mut self.ka.y) ||
-            parse_input("B:", &mut self.ka_value.z, &mut self.ka.z) ||
-            parse_input("R:", &mut self.kd_value.x, &mut self.kd.x) ||
-            parse_input("G:", &mut self.kd_value.y, &mut self.kd.y) ||
-            parse_input("B:", &mut self.kd_value.z, &mut self.kd.z) ||
-            parse_input("R:", &mut self.ks_value.x, &mut self.ks.x) ||
-            parse_input("G:", &mut self.ks_value.y, &mut self.ks.y) ||
-            parse_input("B:", &mut self.ks_value.z, &mut self.ks.z) ||
-            parse_input("N:", &mut self.n_value, &mut self.n);
+        let mut success = true;
+        success &= self.parse_ni_nj_smoothness();
+        success &= self.parse_resi_resj();
+        success &= self.parse_ka_kd_ks();
+        success
+    }
+
+    fn parse_ni_nj_smoothness(&mut self) -> bool {
+        let mut success = true;
+        success &= parse_input("NI:", &mut self.ni_value, &mut self.ni);
+        success &= parse_input("NJ:", &mut self.nj_value, &mut self.nj);
+        success &= parse_input("Passos:", &mut self.smoothness_value, &mut self.smoothness);
         if self.ni_value < 4 {
             self.ni = "NI: Inválido!".to_string();
             success = false;
@@ -611,14 +619,36 @@ impl App {
             self.nj = "NJ: Inválido!".to_string();
             success = false;
         }
+        success
+    }
+
+    fn parse_resi_resj(&mut self) -> bool {
+        let mut success = true;
+        success &= parse_input("RESI:", &mut self.resi_value, &mut self.resi);
+        success &= parse_input("RESJ:", &mut self.resj_value, &mut self.resj);
         if self.resi_value < 4 {
-            self.resi = "Resolução I: Inválida!".to_string();
+            self.resi = "RESI: Inválida!".to_string();
             success = false;
         }
         if self.resj_value < 4 {
-            self.resj = "Resolução J: Inválida!".to_string();
+            self.resj = "RESJ: Inválida!".to_string();
             success = false;
         }
+        success
+    }
+
+    fn parse_ka_kd_ks(&mut self) -> bool {
+        let mut success = true;
+        success &= parse_input("R:", &mut self.ka_value.x, &mut self.ka.r);
+        success &= parse_input("G:", &mut self.ka_value.y, &mut self.ka.g);
+        success &= parse_input("B:", &mut self.ka_value.z, &mut self.ka.b);
+        success &= parse_input("R:", &mut self.kd_value.x, &mut self.kd.r);
+        success &= parse_input("G:", &mut self.kd_value.y, &mut self.kd.g);
+        success &= parse_input("B:", &mut self.kd_value.z, &mut self.kd.b);
+        success &= parse_input("R:", &mut self.ks_value.x, &mut self.ks.r);
+        success &= parse_input("G:", &mut self.ks_value.y, &mut self.ks.g);
+        success &= parse_input("B:", &mut self.ks_value.z, &mut self.ks.b);
+        success &= parse_input("N:", &mut self.n_value, &mut self.n);
         success
     }
 }
