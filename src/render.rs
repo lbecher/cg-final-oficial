@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::f32::INFINITY;
+use eframe::emath::OrderedFloat;
+
 use crate::constants::*;
 use crate::object::{Edge, Face, Object};
 use crate::types::*;
@@ -130,10 +132,9 @@ impl Render {
         let visibility = o.dot(&n) > 0.0;
 
         face.visible = visibility;
-        edges[face.edges[0]].visible = visibility;
-        edges[face.edges[1]].visible = visibility;
-        edges[face.edges[2]].visible = visibility;
-        edges[face.edges[3]].visible = visibility;
+        for edge_index in face.edges.iter() {
+            edges[*edge_index].visible = visibility;
+        }
     }
 
     /// Calcula a matriz de transformação de coordenadas em SRU para SRC.
@@ -208,7 +209,7 @@ impl Render {
     ) -> HashMap<usize, Vec<(f32, f32)>> {
         let mut intersections = HashMap::new();
 
-        for i in 0..4 {
+        for i in 0..face.vertices.len() - 1 {
             let mut x0 = vertices_srt[face.vertices[i]].x;
             let mut y0 = vertices_srt[face.vertices[i]].y.round();
             let mut z0 = vertices_srt[face.vertices[i]].z;
@@ -267,7 +268,7 @@ impl Render {
     ) -> HashMap<usize, Vec<(f32, f32, f32, f32, f32)>> {
         let mut intersections = HashMap::new();
 
-        for i in 0..4 {
+        for i in 0..face.vertices.len() - 1 {
             let mut x0 = vertices_srt[face.vertices[i]].x;
             let mut y0 = vertices_srt[face.vertices[i]].y.round();
             let mut z0 = vertices_srt[face.vertices[i]].z;
@@ -498,12 +499,14 @@ impl Render {
 
         let vertices_srt = self.calc_srt_convertions(&object.vertices);
 
-        // Ordena as faces da malha de acordo com a profundidade média dos vértices
+        // Ordena as faces da malha de acordo com a profundidade média dos vértices no SRT
         let mut faces = object.faces.clone();
         faces.sort_by(|a, b| {
-            let a_z = (vertices_srt[a.vertices[0]].z + vertices_srt[a.vertices[1]].z + vertices_srt[a.vertices[2]].z + vertices_srt[a.vertices[3]].z) / 4.0;
-            let b_z = (vertices_srt[b.vertices[0]].z + vertices_srt[b.vertices[1]].z + vertices_srt[b.vertices[2]].z + vertices_srt[b.vertices[3]].z) / 4.0;
-            a_z.partial_cmp(&b_z).unwrap()
+            let a_depth = a.vertices.iter().map(|&i| vertices_srt[i].z).sum::<f32>() / a.vertices.len() as f32;
+            let b_depth = b.vertices.iter().map(|&i| vertices_srt[i].z).sum::<f32>() / b.vertices.len() as f32;
+            let a_depth = OrderedFloat(a_depth);
+            let b_depth = OrderedFloat(b_depth);
+            a_depth.cmp(&b_depth)
         });
 
         // Para cada face, calcula as interseções da scanline

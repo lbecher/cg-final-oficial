@@ -1,3 +1,4 @@
+use rand::seq::index;
 use rand::Rng;
 use serde::{Serialize, Deserialize};
 use std::sync::Arc;
@@ -12,8 +13,8 @@ pub struct Edge {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Face {
-    pub vertices: [usize; 5],
-    pub edges: [usize; 4],
+    pub vertices: Vec<usize>,
+    pub edges: Vec<usize>,
     pub visible: bool,
     pub normal: Vec3,
     pub centroid: Vec3,
@@ -26,10 +27,10 @@ impl Face {
         let b = vertices[self.vertices[1]];
         let c = vertices[self.vertices[2]];
 
-        let ac = b - a;
-        let ab = c - a;
+        let bc = c - b;
+        let ba = a - c;
 
-        self.normal = ab.cross(&ac).normalize();
+        self.normal = bc.cross(&ba).normalize();
     }
 
     /// Calcula o centroide da face.
@@ -336,10 +337,74 @@ impl Object {
         for i in 0..self.resi - 1 {
             for j in 0..self.resj - 1 {
                 // Nada novo sob o sol, apenas mantendo o sentido anti-horário.
-                let a_index = i * self.resj + j;
-                let b_index = i * self.resj + (j + 1);
-                let c_index = (i + 1) * self.resj + (j + 1);
-                let d_index = (i + 1) * self.resj + j;
+                let a_index = (i + 1) * self.resj + j;
+                let b_index = (i + 1) * self.resj + (j + 1);
+                let c_index = i * self.resj + (j + 1);
+                let d_index = i * self.resj + j;
+
+                // IMPORTANTE!
+                // Usamos as arestas (edges) apenas para desenhar as arestas do Wireframe.
+
+                // Devemos garantir que as arestas sejam únicas.
+                // Para isso, vamos sempre adicionar as arestas
+                // da diagonal, da direita e de cima como novas arestas.
+                let ac_index = self.edges.len();
+                self.edges.push(Edge { vertices: [a_index, c_index], visible: false });
+
+                let bc_index = ac_index + 1;
+                self.edges.push(Edge { vertices: [b_index, c_index], visible: false });
+
+                let cd_index = bc_index + 1;
+                self.edges.push(Edge { vertices: [c_index, d_index], visible: false });
+
+                // Já as arestas da esquerda e de baixo são adicionadas
+                // como novas caso estejam na posição inicial. Caso contrário,
+                // usamos as arestas já existentes das faces anteriores.
+                let ab_index: usize;
+                if i == 0 {
+                    ab_index = self.edges.len();
+                    self.edges.push(Edge { vertices: [a_index, b_index], visible: false });
+                } else {
+                    let index = (i - 1) * self.resj + (j * 2) + 1;
+                    ab_index = self.faces[index].edges[1];
+                };
+
+                let da_index: usize;
+                if j == 0 {
+                    da_index = self.edges.len();
+                    self.edges.push(Edge { vertices: [d_index, a_index], visible: false });
+                } else {
+                    let index = i * self.resj + ((j - 1) * 2);
+                    da_index = self.faces[index].edges[1];
+                };
+
+                // Usamos as faces para o peenchimento.
+                // Armazenamos os índices das arestas para depois
+                // poder modificar o atributo visible com o resultado do teste
+                // de visibilidade e atribuir a cor correta da aretas.
+                let abc_face = Face {
+                    vertices: vec![a_index, b_index, c_index, a_index],
+                    edges: vec![ab_index, bc_index, ac_index],
+                    visible: false,
+                    normal: Vec3::zeros(),
+                    centroid: Vec3::zeros(),
+                };
+                self.faces.push(abc_face);
+
+                let acd_face = Face {
+                    vertices: vec![a_index, c_index, d_index, a_index],
+                    edges: vec![ac_index, cd_index, da_index],
+                    visible: false,
+                    normal: Vec3::zeros(),
+                    centroid: Vec3::zeros(),
+                };
+                self.faces.push(acd_face);
+                /* 
+                // Nada novo sob o sol, apenas mantendo o sentido anti-horário.
+                let a_index = (i + 1) * self.resj + j;
+                let b_index = (i + 1) * self.resj + (j + 1);
+                let c_index = i * self.resj + (j + 1);
+                let d_index = i * self.resj + j;
 
                 // Usamos as arestas para desenhar as bordas.
                 // Devemos garantir que as arestas sejam únicas.
@@ -382,6 +447,7 @@ impl Object {
                     centroid: Vec3::zeros(),
                 };
                 self.faces.push(face);
+                */
             }
         }
     }
