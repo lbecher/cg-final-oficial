@@ -1,6 +1,6 @@
 use eframe::{App as EguiApp, Frame};
 use eframe::emath;
-use eframe::egui::{pos2, CentralPanel, Color32, ColorImage, Context, Pos2, Rect, Sense, Shape, SidePanel,  TextureId, TextureOptions, Ui, Vec2};
+use eframe::egui::{pos2, CentralPanel, Color32, ColorImage, Context, Pos2, Rect, ScrollArea, Sense, Shape, SidePanel,  TextureId, TextureOptions, Ui, Vec2};
 use crate::app::color_input::*;
 use crate::app::vector_input::*;
 use crate::constants::*;
@@ -87,7 +87,9 @@ impl EguiApp for App {
             .exact_width(GUI_SIDEBAR_WIDTH)
             .resizable(false)
             .show(ctx,  |ui| {
-                self.side_panel_content(ui);
+                ScrollArea::vertical().show(ui, |ui| {
+                    self.side_panel_content(ui);
+                });
             });
 
         CentralPanel::default()
@@ -157,6 +159,18 @@ impl App {
 
         ui.separator();
 
+        ui.heading("Arestas");
+        ui.horizontal( |ui| {
+            ui.label("Cor primaria:");
+            ui.color_edit_button_srgba_unmultiplied(&mut self.primary_color);
+        });
+        ui.horizontal( |ui| {
+            ui.label("Cor secundaria:");
+            ui.color_edit_button_srgba_unmultiplied(&mut self.secondary_color);
+        });
+
+        ui.separator();
+
         ui.heading("Sombreamento");
         let old_shader = self.render.shader_type.clone();
         let old_visibility_filter = self.render.visibility_filter;
@@ -183,17 +197,6 @@ impl App {
         vector_input(ui, "VRP (posição da câmera)", &mut self.vrp);
         vector_input(ui, "P", &mut self.p);
         vector_input(ui, "Y", &mut self.y);
-
-        ui.heading("Cores");
-        ui.horizontal( |ui| {
-            ui.label("Cor primaria:");
-            ui.color_edit_button_srgba_unmultiplied(&mut self.primary_color);
-        });
-
-        ui.horizontal( |ui| {
-            ui.label("Cor secundaria:");
-            ui.color_edit_button_srgba_unmultiplied(&mut self.secondary_color);
-        });
 
 
 
