@@ -1,4 +1,3 @@
-use rand::seq::index;
 use rand::Rng;
 use serde::{Serialize, Deserialize};
 use std::sync::Arc;
@@ -126,9 +125,11 @@ impl Object {
         obj
     }
 
-    pub fn set_ni_nj(&mut self, ni: usize, nj: usize, smoothing_iterations: u8) {
+    pub fn set_ni_nj_resi_resj(&mut self, ni: usize, nj: usize, smoothing_iterations: u8, resi: usize, resj: usize) {
         self.ni = ni;
         self.nj = nj;
+        self.resi = resi;
+        self.resj = resj;
 
         self.knots_i = Self::spline_knots(ni, TI);
         self.knots_j = Self::spline_knots(nj, TJ);
@@ -142,15 +143,6 @@ impl Object {
 
     pub fn get_ni_nj(&self) -> (usize, usize) {
         (self.ni, self.nj)
-    }
-
-    pub fn set_resi_resj(&mut self, resi: usize, resj: usize) {
-        self.resi = resi;
-        self.resj = resj;
-
-        self.calc_mesh();
-        self.calc_edges_and_faces();
-        self.calc_centroid();
     }
 
     pub fn get_resi_resj(&self) -> (usize, usize) {
@@ -566,6 +558,13 @@ impl Object {
         }
 
         //self.calc_centroid();
+    }
+
+    /// Aplica a transformação de rotação nos pontos de controle e vértices
+    pub fn rotate(&mut self, rotation: &Vec3) {
+        self.rotate_x(rotation.x.to_radians());
+        self.rotate_y(rotation.y.to_radians());
+        self.rotate_z(rotation.z.to_radians());
     }
 
     /// Aplica a transformação de rotação em Y nos pontos de controle e vértices

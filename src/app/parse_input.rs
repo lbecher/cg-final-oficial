@@ -1,7 +1,7 @@
 use std::fmt::Display;
 use std::str::FromStr;
 
-pub fn parse_input<T>(prefix: &str, value: &mut T, string: &mut String)
+pub fn parse_input<T>(prefix: &str, value: &mut T, string: &mut String) -> bool
 where
     T: FromStr + Display + Copy,
     T::Err: std::fmt::Display,
@@ -11,15 +11,16 @@ where
             if let Ok(parsed_value) = num_str.trim().parse::<T>() {
                 *value = parsed_value;
                 *string = format!("{prefix} {}", parsed_value);
-                return;
+                return true;
             }
         }
     } else {
         if let Ok(parsed_value) = string.trim().parse::<T>() {
             *value = parsed_value;
             *string = format!("{prefix} {}", parsed_value);
-            return;
+            return true;
         }
     }
     *string = format!("Inválido!");
+    false
 }

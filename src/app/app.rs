@@ -1,6 +1,10 @@
 use eframe::{App as EguiApp, Frame};
 use eframe::emath;
 use eframe::egui::{pos2, CentralPanel, Color32, ColorImage, Context, Pos2, Rect, ScrollArea, Sense, Shape, SidePanel,  TextureId, TextureOptions, Ui, Vec2, TextEdit};
+use serde_json;
+use std::fs::File;
+use std::io::{self, BufReader, BufWriter};
+use std::time::{Duration, Instant};
 use crate::app::color_input::*;
 use crate::app::vector_input::*;
 use crate::app::parse_input::*;
@@ -8,10 +12,6 @@ use crate::constants::*;
 use crate::object::Object;
 use crate::render::*;
 use crate::types::*;
-use std::fs::File;
-use std::io::{self, BufReader, BufWriter};
-use serde_json;
-use std::time::{Duration, Instant};
 
 pub struct App {
     objects: Vec<Object>,
@@ -27,17 +27,40 @@ pub struct App {
     p: VectorInputData,
     y: VectorInputData,
 
-    lia: ColorInputData,
+    ila: ColorInputData,
     l: VectorInputData,
-    li: ColorInputData,
+    il: ColorInputData,
 
     render_duration: Duration,
 
     theme: Theme,
 
-    scale_value: String,
-    translation_value: VectorInputData,
-    rotation_value: VectorInputData,
+    ni: String,
+    ni_value: usize,
+    nj: String,
+    nj_value: usize,
+    resi: String,
+    resi_value: usize,
+    resj: String,
+    resj_value: usize,
+    smoothness: String,
+    smoothness_value: u8,
+
+    ka: VectorInputData,
+    ka_value: Vec3,
+    kd: VectorInputData,
+    kd_value: Vec3,
+    ks: VectorInputData,
+    ks_value: Vec3,
+    n: String,
+    n_value: f32,
+
+    scale: String,
+    scale_value: f32,
+    translation: VectorInputData,
+    translation_value: Vec3,
+    rotation: VectorInputData,
+    rotation_value: Vec3,
 }
 
 impl Default for App {
@@ -48,40 +71,80 @@ impl Default for App {
         let size = [render.buffer_width, render.buffer_height];
         let image = ColorImage::from_rgba_premultiplied(size, &buffer);
 
-        let mut objects = Vec::new();
-        let ka: Vec3 = Vec3::new(0.4, 0.4, 0.0);
-        let kd: Vec3 = Vec3::new(0.7, 0.9, 0.4);
-        let ks: Vec3 = Vec3::new(0.5, 0.1, 0.0);
-        let n: f32 = 2.0;
-        objects.push(Object::new(4, 4, 8,8, 3, ka, kd, ks, n));
-        objects[0].scale(100.0);
-        //objects[0].translate(&Vec3::new(300.0, 200.0, 0.0));
+        let objects = Vec::new();
+        let selected_object = None;
+
+        let ka_value: Vec3 = Vec3::new(0.4, 0.4, 0.8);
+        let kd_value: Vec3 = Vec3::new(0.7, 0.9, 0.4);
+        let ks_value: Vec3 = Vec3::new(0.5, 0.1, 0.9);
+        let n_value: f32 = 2.0;
+
+        let ka = VectorInputData::new(ka_value.x, ka_value.y, ka_value.z);
+        let kd = VectorInputData::new(kd_value.x, kd_value.y, kd_value.z);
+        let ks = VectorInputData::new(ks_value.x, ks_value.y, ks_value.z);
+        let n = n_value.to_string();
+
+        let ni_value = 4;
+        let nj_value = 4;
+        let resi_value = 8;
+        let resj_value = 8;
+
+        let ni = "NI: ".to_string();
+        let nj = "NJ: ".to_string();
+        let resi = "Resolução I: ".to_string();
+        let resj = "Resolução J: ".to_string();
+
+        let smoothness = "Suavização: ".to_string();
+        let smoothness_value = 0;
 
         let mut obj = Self {
             objects,
-            selected_object: Some(0),
-
-            render,
-            image,
+            selected_object,
 
             primary_color: [0, 255, 0, 255],
             secondary_color: [255, 0, 0, 255],
 
-            vrp: VectorInputData::new(0.0, 0.0, 0.0),
-            p: VectorInputData::default(),
-            y: VectorInputData::new(0.0, 1.0, 0.0),
+            vrp: VectorInputData::new(render.camera.vrp.x, render.camera.vrp.y, render.camera.vrp.z),
+            p: VectorInputData::new(render.camera.p.x, render.camera.p.y, render.camera.p.z),
+            y: VectorInputData::new(render.camera.y.x, render.camera.y.y, render.camera.y.z),
 
-            l: VectorInputData::default(),
-            li: ColorInputData::default(),
-            lia: ColorInputData::default(),
+            l: VectorInputData::new(render.light.l.x, render.light.l.y, render.light.l.z),
+            il: ColorInputData::new(render.light.il.x, render.light.il.y, render.light.il.z),
+            ila: ColorInputData::new(render.light.ila.x, render.light.ila.y, render.light.ila.z),
 
             render_duration: Duration::default(),
 
             theme: Theme::Dark,
 
-            scale_value: "1.0".to_string(),
-            translation_value: VectorInputData::default(),
-            rotation_value: VectorInputData::default(),
+            ni,
+            ni_value,
+            nj,
+            nj_value,
+            resi,
+            resi_value,
+            resj,
+            resj_value,
+            smoothness,
+            smoothness_value,
+
+            ka,
+            ka_value,
+            kd,
+            kd_value,
+            ks,
+            ks_value,
+            n,
+            n_value,
+
+            scale: "1.0".to_string(),
+            scale_value: 1.0,
+            translation: VectorInputData::new(0.0, 0.0, 0.0),
+            translation_value: Vec3::new(0.0, 0.0, 0.0),
+            rotation: VectorInputData::new(0.0, 0.0, 0.0),
+            rotation_value: Vec3::new(0.0, 0.0, 0.0),
+
+            render,
+            image,
         };
 
         obj.redraw();
@@ -144,6 +207,8 @@ impl App {
     }
 
     pub fn side_panel_content(&mut self, ui: &mut Ui) {
+        let mut redraw = false;
+
         ui.heading("Projeto");
         if ui.button("Salvar projeto").clicked() {
             if let Some(path) = rfd::FileDialog::new().save_file() {
@@ -195,42 +260,79 @@ impl App {
 
         ui.separator();
 
-        ui.heading("Iluminação");
-        vector_input(ui, "L (posição da lâmpada)", &mut self.l);
-        color_input(ui, "Li (cor da lâmpada)", &mut self.li);
-        color_input(ui, "Lia (cor da luz ambiente)", &mut self.lia);
-
-        ui.separator();
-
-        ui.heading("Câmera");
-        vector_input(ui, "VRP (posição da câmera)", &mut self.vrp);
-        vector_input(ui, "P", &mut self.p);
-        vector_input(ui, "Y", &mut self.y);
-
-        ui.separator();
-
         ui.heading("Objetos");
-        for (i, object) in self.objects.iter().enumerate() {
+        ui.collapsing("Pontos de controle", |ui| {
+            ui.add(TextEdit::singleline(&mut self.ni)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.nj)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+        });
+        ui.collapsing("Resolução", |ui| {
+            ui.add(TextEdit::singleline(&mut self.resi)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.resj)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+        });
+        ui.collapsing("Suavização", |ui| {
+            ui.add(TextEdit::singleline(&mut self.smoothness)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+        });
+        ui.collapsing("KA", |ui| {
+            ui.add(TextEdit::singleline(&mut self.ka.x)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.ka.y)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.ka.z)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+        });
+        ui.collapsing("KD", |ui| {
+            ui.add(TextEdit::singleline(&mut self.kd.x)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.kd.y)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.kd.z)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+        });
+        ui.collapsing("KS", |ui| {
+            ui.add(TextEdit::singleline(&mut self.ks.x)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.ks.y)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.ks.z)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+        });
+        if ui.button("Criar novo objeto").clicked() {
+            if self.parse_object_props() {
+                let mut new_object = Object::new(self.ni_value, self.nj_value, self.resi_value, self.resj_value, self.smoothness_value, self.ka_value, self.kd_value, self.ks_value, self.n_value);
+                new_object.scale(100.0);
+                self.objects.push(new_object);
+                self.selected_object = Some(self.objects.len() - 1);
+                redraw = true;
+            }
+        }
+        ui.label("Objetos:");
+        if self.objects.is_empty() {
+            ui.label("Nenhum objeto criado");
+        }
+        for i in 0..self.objects.len() {
             if ui.selectable_label(self.selected_object == Some(i), format!("Objeto {}", i)).clicked() {
                 self.selected_object = Some(i);
             }
         }
-
-        ui.separator();
-
-        ui.heading("Transformações");
-        if ui.button("Adicionar Objeto").clicked() {
-            let ka: Vec3 = Vec3::new(0.4, 0.4, 0.0);
-            let kd: Vec3 = Vec3::new(0.7, 0.9, 0.4);
-            let ks: Vec3 = Vec3::new(0.5, 0.1, 0.0);
-            let n: f32 = 2.0;
-            let mut new_object = Object::new(4, 4, 8, 8, 3, ka, kd, ks, n);
-            new_object.scale(100.0);
-            self.objects.push(new_object);
-            self.selected_object = Some(self.objects.len() - 1);
-            self.redraw();
+        if let Some(idx) = self.selected_object {
+            if ui.button("Modificar objeto selecionado").clicked() {
+                if self.parse_object_props() {
+                    self.objects[idx].set_ni_nj_resi_resj(self.ni_value, self.nj_value, self.smoothness_value, self.resi_value, self.resj_value);
+                    self.objects[idx].ka = self.ka_value;
+                    self.objects[idx].kd = self.kd_value;
+                    self.objects[idx].ks = self.ks_value;
+                    self.objects[idx].n = self.n_value;
+                    self.objects[idx].scale(100.0);
+                    redraw = true;
+                }
+            }
         }
-        if ui.button("Remover Objeto").clicked() {
+        if ui.button("Remover objeto selecionado").clicked() {
             if let Some(idx) = self.selected_object {
                 self.objects.remove(idx);
                 self.selected_object = None;
@@ -238,7 +340,111 @@ impl App {
             }
         }
 
+        ui.separator();
+
+        ui.heading("Iluminação");
+        vector_input(ui, "L (posição da lâmpada)", &mut self.l, &mut self.render.light.l, &mut redraw);
+        color_input(ui, "IL (cor da lâmpada)", &mut self.il, &mut self.render.light.il, &mut redraw);
+        color_input(ui, "ILA (cor da luz ambiente)", &mut self.ila, &mut self.render.light.ila, &mut redraw);
+
+        ui.separator();
+
+        ui.heading("Câmera");
+        ui.collapsing("VRP (posição da câmera)", |ui| {
+            ui.add(TextEdit::singleline(&mut self.vrp.x)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.vrp.y)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.vrp.z)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            if ui.button("Aplicar").clicked() {
+                parse_input("X:", &mut self.render.camera.vrp.x, &mut self.vrp.x);
+                parse_input("Y:", &mut self.render.camera.vrp.y, &mut self.vrp.y);
+                parse_input("Z:", &mut self.render.camera.vrp.z, &mut self.vrp.z);
+                self.render.calc_sru_src_matrix();
+                redraw = true;
+            }
+        });
+        ui.collapsing("Y", |ui| {
+            ui.add(TextEdit::singleline(&mut self.y.x)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.y.y)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.y.z)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            if ui.button("Aplicar").clicked() {
+                parse_input("X:", &mut self.render.camera.y.x, &mut self.y.x);
+                parse_input("Y:", &mut self.render.camera.y.y, &mut self.y.y);
+                parse_input("Z:", &mut self.render.camera.y.z, &mut self.y.z);
+                self.render.calc_sru_src_matrix();
+                redraw = true;
+            }
+        });
+        ui.collapsing("P", |ui| {
+            ui.add(TextEdit::singleline(&mut self.p.x)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.p.y)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.p.z)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            if ui.button("Aplicar").clicked() {
+                parse_input("X:", &mut self.render.camera.p.x, &mut self.p.x);
+                parse_input("Y:", &mut self.render.camera.p.y, &mut self.p.y);
+                parse_input("Z:", &mut self.render.camera.p.z, &mut self.p.z);
+                self.render.calc_sru_src_matrix();
+                redraw = true;
+            }
+        });
+
+        ui.separator();
+
+        ui.heading("Transformações");
         if let Some(idx) = self.selected_object {
+            ui.collapsing("Translação Manual", |ui| {
+                ui.add(TextEdit::singleline(&mut self.translation.x)
+                    .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                ui.add(TextEdit::singleline(&mut self.translation.y)
+                    .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                ui.add(TextEdit::singleline(&mut self.translation.z)
+                    .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                if ui.button("Aplicar").clicked() {
+                    parse_input("X:", &mut self.translation_value.x, &mut self.translation.x);
+                    parse_input("Y:", &mut self.translation_value.y, &mut self.translation.y);
+                    parse_input("Z:", &mut self.translation_value.z, &mut self.translation.z);
+                    if let Some(idx) = self.selected_object {
+                        self.objects[idx].translate(&self.translation_value);
+                        redraw = true;
+                    }
+                }
+            });
+            ui.collapsing("Escala Manual", |ui| {
+                ui.add(TextEdit::singleline(&mut self.scale)
+                    .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                if ui.button("Aplicar").clicked() {
+                    parse_input("XYZ:", &mut self.scale_value, &mut self.scale);
+                    if let Some(idx) = self.selected_object {
+                        self.objects[idx].scale(self.scale_value);
+                        redraw = true;
+                    }
+                }
+            });
+            ui.collapsing("Rotação Manual", |ui| {
+                ui.add(TextEdit::singleline(&mut self.rotation.x)
+                    .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                ui.add(TextEdit::singleline(&mut self.rotation.y)
+                    .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                ui.add(TextEdit::singleline(&mut self.rotation.z)
+                    .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                if ui.button("Aplicar").clicked() {
+                    parse_input("X:", &mut self.rotation_value.x, &mut self.rotation.x);
+                    parse_input("Y:", &mut self.rotation_value.y, &mut self.rotation.y);
+                    parse_input("Z:", &mut self.rotation_value.z, &mut self.rotation.z);
+                    if let Some(idx) = self.selected_object {
+                        self.objects[idx].rotate(&self.rotation_value);
+                        redraw = true;
+                    }
+                }
+            });
             ui.horizontal(|ui| {
                 if ui.button("Rodar X+").clicked() {
                     self.objects[idx].rotate_x(0.1);
@@ -269,38 +475,6 @@ impl App {
                     self.redraw();
                 }
             });
-
-            ui.separator();
-            ui.label("Rotação Manual");
-            vector_input(ui, "Rotação", &mut self.rotation_value);
-            if ui.button("Aplicar Rotação").clicked() {
-                self.objects[idx].rotate_x(self.rotation_value.x);
-                self.objects[idx].rotate_y(self.rotation_value.y);
-                self.objects[idx].rotate_z(self.rotation_value.z);
-                self.redraw();
-            }
-
-            ui.separator();
-            ui.label("Translação Manual");
-            vector_input(ui, "Translação", &mut self.translation_value);
-            if ui.button("Aplicar Translação").clicked() {
-                self.objects[idx].translate(&Vec3::new(self.translation_value.x, self.translation_value.y, self.translation_value.z));
-                self.redraw();
-            }
-
-            ui.separator();
-            ui.label("Escala Manual");
-            ui.horizontal(|ui| {
-                ui.label("Escala:");
-                ui.add(TextEdit::singleline(&mut self.scale_value));
-            });
-            if ui.button("Aplicar Escala").clicked() {
-                if let Ok(scale) = self.scale_value.parse::<f32>() {
-                    self.objects[idx].scale(scale);
-                    self.redraw();
-                }
-            }
-
             ui.horizontal(|ui| {
                 if ui.button("Transladar +X").clicked() {
                     self.objects[idx].translate(&Vec3::new(10.0, 0.0, 0.0));
@@ -341,6 +515,10 @@ impl App {
                     self.redraw();
                 }
             });
+        }
+
+        if redraw {
+            self.redraw();
         }
     }
 
@@ -404,6 +582,44 @@ impl App {
                 self.redraw();
             }
         }
+    }
+}
+
+
+impl App {
+    fn parse_object_props(&mut self) -> bool {
+        let mut success = parse_input("NI:", &mut self.ni_value, &mut self.ni) ||
+            parse_input("NJ:", &mut self.nj_value, &mut self.nj) ||
+            parse_input("RESI:", &mut self.resi_value, &mut self.resi) ||
+            parse_input("RESJ:", &mut self.resj_value, &mut self.resj) ||
+            parse_input("Passos:", &mut self.smoothness_value, &mut self.smoothness) ||
+            parse_input("R:", &mut self.ka_value.x, &mut self.ka.x) ||
+            parse_input("G:", &mut self.ka_value.y, &mut self.ka.y) ||
+            parse_input("B:", &mut self.ka_value.z, &mut self.ka.z) ||
+            parse_input("R:", &mut self.kd_value.x, &mut self.kd.x) ||
+            parse_input("G:", &mut self.kd_value.y, &mut self.kd.y) ||
+            parse_input("B:", &mut self.kd_value.z, &mut self.kd.z) ||
+            parse_input("R:", &mut self.ks_value.x, &mut self.ks.x) ||
+            parse_input("G:", &mut self.ks_value.y, &mut self.ks.y) ||
+            parse_input("B:", &mut self.ks_value.z, &mut self.ks.z) ||
+            parse_input("N:", &mut self.n_value, &mut self.n);
+        if self.ni_value < 4 {
+            self.ni = "NI: Inválido!".to_string();
+            success = false;
+        }
+        if self.nj_value < 4 {
+            self.nj = "NJ: Inválido!".to_string();
+            success = false;
+        }
+        if self.resi_value < 4 {
+            self.resi = "Resolução I: Inválida!".to_string();
+            success = false;
+        }
+        if self.resj_value < 4 {
+            self.resj = "Resolução J: Inválida!".to_string();
+            success = false;
+        }
+        success
     }
 }
 

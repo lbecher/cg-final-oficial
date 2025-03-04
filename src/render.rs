@@ -138,7 +138,7 @@ impl Render {
     }
 
     /// Calcula a matriz de transformação de coordenadas em SRU para SRC.
-    fn calc_sru_src_matrix(&self) -> Mat4 {
+    pub fn calc_sru_src_matrix(&self) -> Mat4 {
         let n: Vec3 = self.camera.vrp - self.camera.p;
         let nn: Vec3 = n.normalize();
 
