@@ -562,7 +562,7 @@ impl App {
             let mut shapes = Vec::new();
 
             for (i, control_point) in control_points_srt.iter().enumerate() {
-                let mut point = pos2(control_point.x, control_point.y);
+                let point = pos2(control_point.x, control_point.y);
                 let size = Vec2::splat(2.0 * control_point_radius);
 
                 let point_in_screen = to_screen.transform_pos(point);
@@ -571,12 +571,14 @@ impl App {
                 let point_response = ui.interact(point_rect, point_id, Sense::drag());
 
                 if point_response.dragged() {
-                    let drag_delta: Vec2 = point_response.drag_delta();
-                    let mut drag_delta_sru: Mat4x1 = m_srt_sru * Mat4x1::new(drag_delta.x, -drag_delta.y, 0.0, 1.0);
+                    let drag_delta = point_response.drag_delta();
+                    let old_srt = self.render.m_sru_srt * vec3_to_mat4x1(&control_points[i]);
+                    let mut new_srt = old_srt;
+                    new_srt.x += drag_delta.x;
+                    new_srt.y += drag_delta.y;
 
-                    point += drag_delta;
-                    control_points[i].x += drag_delta.x;
-                    control_points[i].y -= drag_delta.y;
+                    let new_sru = self.render.m_srt_sru * new_srt;
+                    control_points[i] = mat4x1_to_vec3(&new_sru);
 
                     dragged = true;
                 }
