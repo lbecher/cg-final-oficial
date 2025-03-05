@@ -252,7 +252,7 @@ impl App {
         ui.label(format!("Tempo de renderização: {:?} ms", self.render_duration.as_millis()));
         ui.checkbox(&mut self.render.visibility_filter, "Filtro de visibilidade");
         if self.render.shader_type != old_shader || self.render.visibility_filter != old_visibility_filter {
-            self.redraw();
+            redraw = true;
         }
 
         ui.separator();
