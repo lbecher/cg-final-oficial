@@ -492,14 +492,14 @@ impl Render {
         primary_edge_color: [u8; 4],
         secondary_edge_color: [u8; 4],
     ) {
+        let vertices_srt = self.calc_srt_convertions(&object.vertices);
+
         for face in object.faces.iter_mut() {
             face.calc_normal(&object.vertices);
             face.calc_centroid(&object.vertices);
+            self.calc_visibility(face, &mut object.edges);
         }
 
-        let vertices_srt = self.calc_srt_convertions(&object.vertices);
-
-        // Ordena as faces da malha de acordo com a profundidade média dos vértices no SRT
         let mut faces = object.faces.clone();
         faces.sort_by(|a, b| {
             let a_depth = a.vertices.iter().map(|&i| vertices_srt[i].z).sum::<f32>() / a.vertices.len() as f32;
@@ -511,8 +511,6 @@ impl Render {
 
         // Para cada face, calcula as interseções da scanline
         for face in faces.iter_mut() {
-            self.calc_visibility(face, &mut object.edges);
-
             if self.visibility_filter && !face.visible {
                 continue;
             }
@@ -624,21 +622,30 @@ impl Render {
         &mut self,
         object: &mut Object,
     ) {
-        let vertices_srt = self.calc_srt_convertions(&object.vertices);
-
         let ka: Vec3 = object.ka;
         let kd: Vec3 = object.kd;
         let ks: Vec3 = object.ks;
 
-        for face in &mut object.faces {
+        let vertices_srt = self.calc_srt_convertions(&object.vertices);
+
+        for face in object.faces.iter_mut() {
             face.calc_normal(&object.vertices);
             face.calc_centroid(&object.vertices);
+            self.calc_visibility(face, &mut object.edges);
+        }
 
-            if self.visibility_filter {
-                self.calc_visibility(face, &mut object.edges);
-                if !face.visible {
-                    continue;
-                }
+        let mut faces = object.faces.clone();
+        faces.sort_by(|a, b| {
+            let a_depth = a.vertices.iter().map(|&i| vertices_srt[i].z).sum::<f32>() / a.vertices.len() as f32;
+            let b_depth = b.vertices.iter().map(|&i| vertices_srt[i].z).sum::<f32>() / b.vertices.len() as f32;
+            let a_depth = OrderedFloat(a_depth);
+            let b_depth = OrderedFloat(b_depth);
+            a_depth.cmp(&b_depth)
+        });
+
+        for face in faces.iter_mut() {
+            if self.visibility_filter && !face.visible {
+                continue;
             }
 
             let direction: Vec3 = (self.camera.vrp - face.centroid).normalize();
@@ -701,17 +708,26 @@ impl Render {
         &mut self,
         object: &mut Object,
     ) {
-        let vertices_srt = self.calc_srt_convertions(&object.vertices);
-
         let ka: Vec3 = object.ka;
         let kd: Vec3 = object.kd;
         let ks: Vec3 = object.ks;
 
-        // Calculate normals and centroids for each face
-        for face in &mut object.faces {
+        let vertices_srt = self.calc_srt_convertions(&object.vertices);
+
+        for face in object.faces.iter_mut() {
             face.calc_normal(&object.vertices);
             face.calc_centroid(&object.vertices);
+            self.calc_visibility(face, &mut object.edges);
         }
+
+        let mut faces = object.faces.clone();
+        faces.sort_by(|a, b| {
+            let a_depth = a.vertices.iter().map(|&i| vertices_srt[i].z).sum::<f32>() / a.vertices.len() as f32;
+            let b_depth = b.vertices.iter().map(|&i| vertices_srt[i].z).sum::<f32>() / b.vertices.len() as f32;
+            let a_depth = OrderedFloat(a_depth);
+            let b_depth = OrderedFloat(b_depth);
+            a_depth.cmp(&b_depth)
+        });
 
         // Calculate vertex intensities
         let mut vertex_intensities = vec![Vec3::zeros(); object.vertices.len()];
@@ -737,11 +753,8 @@ impl Render {
 
         // Render each face
         for face in &mut object.faces {
-            if self.visibility_filter {
-                self.calc_visibility(face, &mut object.edges);
-                if !face.visible {
-                    continue;
-                }
+            if self.visibility_filter && !face.visible {
+                continue;
             }
 
             let intersections = Self::calc_intersections_for_gouraud(&vertices_srt, &vertex_intensities, face);
