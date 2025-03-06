@@ -158,12 +158,6 @@ impl Render {
     /// Calcula a matriz de projeção axonométrica isométrica.
     fn calc_proj_matrix(&self) -> Mat4 {
         Mat4::identity()
-        /*Mat4::new(
-            (2.0_f32).sqrt() / 2.0,  0.0,                     (2.0_f32).sqrt() / 2.0,  0.0,
-            (6.0_f32).sqrt() / 6.0,  (3.0_f32).sqrt() / 3.0,  -(6.0_f32).sqrt() / 6.0, 0.0,
-            -(3.0_f32).sqrt() / 3.0, (6.0_f32).sqrt() / 6.0,  (6.0_f32).sqrt() / 6.0,  0.0,
-            0.0,                     0.0,                     0.0,                     1.0,
-        )*/
     }
 
     /// Calcula a matriz de transformação janela/porta de visão.

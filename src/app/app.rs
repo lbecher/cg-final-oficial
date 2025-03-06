@@ -63,6 +63,8 @@ pub struct App {
     rotation_value: Vec3,
 
     show_control_points: bool,
+
+    cylinder: bool,
 }
 
 impl Default for App {
@@ -146,6 +148,7 @@ impl Default for App {
             image,
 
             show_control_points: true,
+            cylinder: false,
         };
 
         obj.redraw();
@@ -332,12 +335,21 @@ impl App {
         });
         if ui.button("Criar novo objeto").clicked() {
             if self.parse_object_props() {
-                let mut new_object = Object::new(self.ni_value, self.nj_value, self.resi_value, self.resj_value, self.smoothness_value, self.ka_value, self.kd_value, self.ks_value, self.n_value);
+                let mut new_object = Object::new(self.ni_value, self.nj_value, self.resi_value, self.resj_value, self.smoothness_value, self.ka_value, self.kd_value, self.ks_value, self.n_value, self.cylinder);
                 new_object.scale(100.0);
                 self.objects.push(new_object);
                 self.selected_object = Some(self.objects.len() - 1);
                 redraw = true;
             }
+        }
+        ui.checkbox(&mut self.cylinder, "Criar objeto fechado");
+        if ui.button("Limpar objetos").clicked() {
+            self.objects.clear();
+            self.selected_object = None;
+            redraw = true;
+        }
+        if ui.button("Limpar seleção").clicked() {
+            self.selected_object = None;
         }
         ui.label("Objetos:");
         if self.objects.is_empty() {

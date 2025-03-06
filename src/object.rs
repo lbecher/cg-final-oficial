@@ -15,25 +15,25 @@ pub struct Face {
     pub vertices: Vec<usize>,
     pub edges: Vec<usize>,
     pub visible: bool,
-    pub centroid: Vec3,
     pub normal: Vec3,
     pub direction: Vec3,
+    pub centroid: Vec3,
 }
 
 impl Face {
     /// Calcula a normal da face.
     pub fn calc_normal(&mut self, vertices: &Vec<Vec3>) {
-        let a: Vec3 = vertices[self.vertices[0]];
-        let b: Vec3 = vertices[self.vertices[1]];
-        let c: Vec3 = vertices[self.vertices[2]];
+        let a = vertices[self.vertices[0]];
+        let b = vertices[self.vertices[1]];
+        let c = vertices[self.vertices[2]];
 
-        let bc: Vec3 = c - b;
-        let ba: Vec3 = a - b;
+        let bc = c - b;
+        let ba = a - c;
 
         self.normal = bc.cross(&ba).normalize();
     }
 
-    /// Calcula a direção da observação em relação ao centroide da face.
+    /// Calcula a direção.
     pub fn calc_direction(&mut self, vrp: &Vec3) {
         let direction: Vec3 = *vrp - self.centroid;
         self.direction = direction.normalize();
@@ -41,13 +41,11 @@ impl Face {
 
     /// Calcula o centroide da face.
     pub fn calc_centroid(&mut self, vertices: &Vec<Vec3>) {
-        // vertices -> vertices de fato
-        // self.vertices -> índices dos vértices
-        let mut centroid: Vec3 = Vec3::zeros();
-        for i in 0..self.vertices.len() {
-            centroid += vertices[self.vertices[i]];
+        let mut centroid = Vec3::zeros();
+        for i in 0..3 {
+            centroid = centroid + vertices[self.vertices[i]];
         }
-        self.centroid = centroid / self.vertices.len() as f32;
+        self.centroid = centroid / 3.0
     }
 }
 
@@ -96,8 +94,13 @@ impl Object {
         kd: Vec3,
         ks: Vec3,
         n: f32,
+        cylinder: bool,
     ) -> Self {
-        let control_points: Vec<Vec3> = Self::gen_control_points(ni, nj, smoothing_iterations);
+        let control_points: Vec<Vec3> = if !cylinder {
+            Self::gen_control_points(ni, nj, smoothing_iterations)
+        } else {
+            Self::gen_cylinder_control_point(ni, nj)
+        };
 
         let knots_i: Vec<f32> = Self::spline_knots(ni, TI);
         let knots_j: Vec<f32> = Self::spline_knots(nj, TJ);
@@ -182,6 +185,21 @@ impl Object {
             }
         }
         Self::smooth_control_points(&mut control_points, smoothing_iterations, ni, nj);
+        control_points
+    }
+
+    /// gerar pontos de controle para um cilindro
+    fn gen_cylinder_control_point(ni: usize, nj: usize) -> Vec<Vec3> {
+        let mut control_points: Vec<Vec3> = Vec::with_capacity((ni + 1) * (nj + 1));
+        let step_i = 2.0 * std::f32::consts::PI / (ni + 1)  as f32;
+        let step_j = 1.0 / nj as f32;
+        for i in 0..=ni {
+            for j in 0..=nj {
+                let x = i as f32 * step_i;
+                let y = j as f32 * step_j;
+                control_points.push(Vec3::new(x.cos(), y,  x.sin()));
+            }
+        }
         control_points
     }
 
