@@ -15,39 +15,30 @@ pub struct Face {
     pub vertices: Vec<usize>,
     pub edges: Vec<usize>,
     pub visible: bool,
-    pub centroid: Vec3,
     pub normal: Vec3,
-    pub direction: Vec3,
+    pub centroid: Vec3,
 }
 
 impl Face {
     /// Calcula a normal da face.
     pub fn calc_normal(&mut self, vertices: &Vec<Vec3>) {
-        let a: Vec3 = vertices[self.vertices[0]];
-        let b: Vec3 = vertices[self.vertices[1]];
-        let c: Vec3 = vertices[self.vertices[2]];
+        let a = vertices[self.vertices[0]];
+        let b = vertices[self.vertices[1]];
+        let c = vertices[self.vertices[2]];
 
-        let bc: Vec3 = c - b;
-        let ba: Vec3 = a - b;
+        let bc = c - b;
+        let ba = a - c;
 
         self.normal = bc.cross(&ba).normalize();
     }
 
-    /// Calcula a direção da observação em relação ao centroide da face.
-    pub fn calc_direction(&mut self, vrp: &Vec3) {
-        let direction: Vec3 = *vrp - self.centroid;
-        self.direction = direction.normalize();
-    }
-
     /// Calcula o centroide da face.
     pub fn calc_centroid(&mut self, vertices: &Vec<Vec3>) {
-        // vertices -> vertices de fato
-        // self.vertices -> índices dos vértices
-        let mut centroid: Vec3 = Vec3::zeros();
-        for i in 0..self.vertices.len() {
-            centroid += vertices[self.vertices[i]];
+        let mut centroid = Vec3::zeros();
+        for i in 0..3 {
+            centroid = centroid + vertices[self.vertices[i]];
         }
-        self.centroid = centroid / self.vertices.len() as f32;
+        self.centroid = centroid / 3.0
     }
 }
 
@@ -394,7 +385,6 @@ impl Object {
                     edges: vec![ab_index, bc_index, ac_index],
                     visible: false,
                     normal: Vec3::zeros(),
-                    direction: Vec3::zeros(),
                     centroid: Vec3::zeros(),
                 };
                 self.faces.push(abc_face);
@@ -404,7 +394,6 @@ impl Object {
                     edges: vec![ac_index, cd_index, da_index],
                     visible: false,
                     normal: Vec3::zeros(),
-                    direction: Vec3::zeros(),
                     centroid: Vec3::zeros(),
                 };
                 self.faces.push(acd_face);
@@ -463,7 +452,6 @@ impl Object {
                     edges: vec![ab_index, bc_index, cd_index, da_index],
                     visible: false,
                     normal: Vec3::zeros(),
-                    direction: Vec3::zeros(),
                     centroid: Vec3::zeros(),
                 };
                 self.faces.push(face);

@@ -127,7 +127,7 @@ impl Render {
         face: &mut Face,
         edges: &mut Vec<Edge>,
     ) {
-        let o: Vec3 = (self.camera.vrp - face.centroid).normalize();
+        let o: Vec3 = face.direction;
         let n: Vec3 = face.normal;
         let visibility = o.dot(&n) > 0.0;
 
@@ -497,6 +497,7 @@ impl Render {
         for face in object.faces.iter_mut() {
             face.calc_normal(&object.vertices);
             face.calc_centroid(&object.vertices);
+            face.calc_direction(&self.camera.vrp);
             self.calc_visibility(face, &mut object.edges);
         }
 
@@ -631,6 +632,7 @@ impl Render {
         for face in object.faces.iter_mut() {
             face.calc_normal(&object.vertices);
             face.calc_centroid(&object.vertices);
+            face.calc_direction(&self.camera.vrp);
             self.calc_visibility(face, &mut object.edges);
         }
 
@@ -717,6 +719,7 @@ impl Render {
         for face in object.faces.iter_mut() {
             face.calc_normal(&object.vertices);
             face.calc_centroid(&object.vertices);
+            face.calc_direction(&self.camera.vrp);
             self.calc_visibility(face, &mut object.edges);
         }
 
