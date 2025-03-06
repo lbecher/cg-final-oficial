@@ -61,7 +61,7 @@ impl Default for Render {
     fn default() -> Self {
         let shader_type = ShaderType::Wireframe;
         let camera = Camera {
-            vrp: Vec3::new(-2.0, 1.0, 40.0),
+            vrp: Vec3::new(0.0, 0.0, 400.0),
             p: Vec3::new(0.0, 0.0, 0.0),
             y: Vec3::new(0.0, 1.0, 0.0),
         };

@@ -61,6 +61,8 @@ pub struct App {
     translation_value: Vec3,
     rotation: VectorInputData,
     rotation_value: Vec3,
+
+    show_control_points: bool,
 }
 
 impl Default for App {
@@ -142,6 +144,8 @@ impl Default for App {
 
             render,
             image,
+
+            show_control_points: true,
         };
 
         obj.redraw();
@@ -251,6 +255,7 @@ impl App {
         ui.radio_value(&mut self.render.shader_type, ShaderType::Phong, "Phong");
         ui.label(format!("Tempo de renderização: {:?} ms", self.render_duration.as_millis()));
         ui.checkbox(&mut self.render.visibility_filter, "Filtro de visibilidade");
+        ui.checkbox(&mut self.show_control_points, "Pontos de controle");
         if self.render.shader_type != old_shader || self.render.visibility_filter != old_visibility_filter {
             redraw = true;
         }
@@ -551,43 +556,45 @@ impl App {
         };
         painter.image(texture_id, response.rect, uv, Color32::WHITE);
 
-        if let Some(idx) = self.selected_object {
-            let m_srt_sru = self.render.m_srt_sru.clone();
+        if self.show_control_points {
+            if let Some(idx) = self.selected_object {
+                let m_srt_sru = self.render.m_srt_sru.clone();
 
-            let control_point_radius = 2.0;
-            let control_points_srt: Vec<Vec3> = self.render.calc_srt_convertions(&self.objects[idx].control_points);
-            let control_points: &mut Vec<Vec3> = &mut self.objects[idx].control_points;
+                let control_point_radius = 2.0;
+                let control_points_srt: Vec<Vec3> = self.render.calc_srt_convertions(&self.objects[idx].control_points);
+                let control_points: &mut Vec<Vec3> = &mut self.objects[idx].control_points;
 
-            let mut dragged = false;
-            let mut shapes = Vec::new();
+                let mut dragged = false;
+                let mut shapes = Vec::new();
 
-            for (i, control_point) in control_points_srt.iter().enumerate() {
-                let point = pos2(control_point.x, control_point.y);
-                let size = Vec2::splat(2.0 * control_point_radius);
+                for (i, control_point) in control_points_srt.iter().enumerate() {
+                    let point = pos2(control_point.x, control_point.y);
+                    let size = Vec2::splat(2.0 * control_point_radius);
 
-                let point_in_screen = to_screen.transform_pos(point);
-                let point_rect = Rect::from_center_size(point_in_screen, size);
-                let point_id = response.id.with(i);
-                let point_response = ui.interact(point_rect, point_id, Sense::drag());
+                    let point_in_screen = to_screen.transform_pos(point);
+                    let point_rect = Rect::from_center_size(point_in_screen, size);
+                    let point_id = response.id.with(i);
+                    let point_response = ui.interact(point_rect, point_id, Sense::drag());
 
-                if point_response.dragged() {
-                    let drag_delta: Vec2 = point_response.drag_delta();
-                    let drag_delta_sru: Mat4x1 = m_srt_sru * Mat4x1::new(drag_delta.x, -drag_delta.y, 0.0, 0.0);
-                    control_points[i] += mat4x1_to_vec3(&drag_delta_sru);
+                    if point_response.dragged() {
+                        let drag_delta: Vec2 = point_response.drag_delta();
+                        let drag_delta_sru: Mat4x1 = m_srt_sru * Mat4x1::new(drag_delta.x, -drag_delta.y, 0.0, 0.0);
+                        control_points[i] += mat4x1_to_vec3(&drag_delta_sru);
 
-                    dragged = true;
+                        dragged = true;
+                    }
+
+                    let point_in_screen = to_screen.transform_pos(point);
+                    shapes.push(Shape::circle_filled(point_in_screen, control_point_radius, Color32::RED));
                 }
 
-                let point_in_screen = to_screen.transform_pos(point);
-                shapes.push(Shape::circle_filled(point_in_screen, control_point_radius, Color32::RED));
-            }
+                painter.extend(shapes);
 
-            painter.extend(shapes);
-
-            if dragged {
-                self.objects[idx].calc_mesh();
-                self.objects[idx].calc_centroid();
-                self.redraw();
+                if dragged {
+                    self.objects[idx].calc_mesh();
+                    self.objects[idx].calc_centroid();
+                    self.redraw();
+                }
             }
         }
     }
