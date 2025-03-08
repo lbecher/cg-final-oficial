@@ -836,7 +836,137 @@ impl Render {
         &mut self,
         object: &mut Object,
     ) {
+        let ka: Vec3 = object.ka;
+        let kd: Vec3 = object.kd;
+        let ks: Vec3 = object.ks;
+
         let vertices_srt = self.calc_srt_convertions(&object.vertices);
-        todo!();
+
+        for face in object.faces.iter_mut() {
+            face.calc_normal(&object.vertices);
+            face.calc_centroid(&object.vertices);
+            face.calc_direction(&self.camera.vrp);
+            self.calc_visibility(face, &mut object.edges);
+        }
+
+        let mut faces = object.faces.clone();
+        faces.sort_by(|a, b| {
+            let a_depth = a.vertices.iter().map(|&i| vertices_srt[i].z).sum::<f32>() / a.vertices.len() as f32;
+            let b_depth = b.vertices.iter().map(|&i| vertices_srt[i].z).sum::<f32>() / b.vertices.len() as f32;
+            let a_depth = OrderedFloat(a_depth);
+            let b_depth = OrderedFloat(b_depth);
+            a_depth.cmp(&b_depth)
+        });
+
+        // Calculate vertex normals
+        let mut vertex_normals = vec![Vec3::zeros(); object.vertices.len()];
+        for (i, vertex) in object.vertices.iter().enumerate() {
+            let mut normal = Vec3::zeros();
+            let mut count = 0;
+
+            for face in &object.faces {
+                if face.vertices.contains(&i) {
+                    normal += face.normal;
+                    count += 1;
+                }
+            }
+
+            if count > 0 {
+                normal = normal.normalize();
+            }
+
+            vertex_normals[i] = normal;
+        }
+
+        for face in faces.iter_mut() {
+            if self.visibility_filter && !face.visible {
+                continue;
+            }
+
+            let intersections = Self::calc_intersections(&vertices_srt, face);
+
+            for (i, scaline_intersections) in intersections.iter() {
+                if scaline_intersections.len() < 2 {
+                    continue;
+                }
+
+                if *i >= self.buffer_height as usize {
+                    continue;
+                }
+
+                let mut counter = 0;
+
+                while counter < scaline_intersections.len() {
+                    let x0: usize = scaline_intersections[counter].0.ceil() as usize;
+                    let z0: f32 = scaline_intersections[counter].1;
+                    let x1: usize = scaline_intersections[counter + 1].0.floor() as usize;
+                    let z1: f32 = scaline_intersections[counter + 1].1;
+
+                    counter += 2;
+
+                    if x1 < x0 {
+                        continue;
+                    }
+
+                    let dx = (x1 - x0) as f32;
+                    let dz = z1 - z0;
+                    let tz = dz / dx;
+
+                    let mut z: f32 = z0;
+
+                    for j in x0..=x1 {
+                        if j >= self.buffer_width {
+                            continue;
+                        }
+
+                        let z_index = i * self.buffer_width + j;
+
+                        if z > self.zbuffer[z_index] {
+                            let position = Vec3::new(j as f32, *i as f32, z);
+                            let direction = (self.camera.vrp - position).normalize();
+
+                            // Interpolate normals
+                            let t = (j as f32 - x0 as f32) / dx;
+                            let normal = vertex_normals[face.vertices[0]] * (1.0 - t) + vertex_normals[face.vertices[1]] * t;
+                            let normal = normal.normalize();
+
+                            // Calculate color with interpolated normal and reflection
+                            let ln: Vec3 = (self.light.l - position).normalize();
+                            let id_dot = normal.dot(&ln);
+                            let r: Vec3 = 2.0 * id_dot * normal - ln;
+                            let is_dot = r.dot(&direction);
+
+                            let mut it: Vec3 = Vec3::zeros();
+                            for k in 0..3 {
+                                let ia = self.light.ila[k] * ka[k];
+                                it[k] += ia;
+
+                                if id_dot > 0.0 {
+                                    let id = self.light.il[k] * kd[k] * id_dot;
+                                    it[k] += id;
+
+                                    if is_dot > 0.0 {
+                                        let is = self.light.il[k] * ks[k] * is_dot.powf(self.light.n);
+                                        it[k] += is;
+                                    }
+                                }
+
+                                if it[k] < 0.0 {
+                                    it[k] = 0.0;
+                                } else if it[k] > 255.0 {
+                                    it[k] = 255.0;
+                                }
+                            }
+
+                            let color = [it[0] as u8, it[1] as u8, it[2] as u8, 255];
+                            self.paint(*i, j, color);
+                            self.zbuffer[z_index] = z;
+                        }
+
+                        z += tz;
+                    }
+                }
+            }
+        }
     }
 }
