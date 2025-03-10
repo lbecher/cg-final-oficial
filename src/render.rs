@@ -345,6 +345,66 @@ impl Render {
         intersections
     }
 
+    /// Calcula as interseções das arestas da face com as linhas horizontais para Phong.
+    pub fn calc_intersections_for_phong(
+        vertices_srt: &[Vec3],
+        normals: &[Vec3],
+        face: &Face,
+    ) -> HashMap<usize, Vec<(f32, f32, Vec3)>> {
+        let mut intersections = HashMap::new();
+
+        for i in 0..face.vertices.len() - 1 {
+            let mut x0 = vertices_srt[face.vertices[i]].x;
+            let mut y0 = vertices_srt[face.vertices[i]].y.round();
+            let mut z0 = vertices_srt[face.vertices[i]].z;
+            let mut x1 = vertices_srt[face.vertices[i + 1]].x;
+            let mut y1 = vertices_srt[face.vertices[i + 1]].y.round();
+            let mut z1 = vertices_srt[face.vertices[i + 1]].z;
+
+            let mut n0 = normals[face.vertices[i]];
+            let mut n1 = normals[face.vertices[i + 1]];
+
+            if y0 > y1 {
+                std::mem::swap(&mut x0, &mut x1);
+                std::mem::swap(&mut y0, &mut y1);
+                std::mem::swap(&mut z0, &mut z1);
+                std::mem::swap(&mut n0, &mut n1);
+            }
+
+            let dx = x1 - x0;
+            let dy = y1 - y0;
+            let dz = z1 - z0;
+            let dn = n1 - n0;
+
+            let tx = dx / dy;
+            let tz = dz / dy;
+            let tn = dn / dy;
+
+            let mut x = x0;
+            let mut y = y0.round();
+            let mut z = z0;
+            let mut n = n0;
+
+            while y < y1 {
+                if y >= 0.0 {
+                    let x_intersections = intersections.entry(y as usize)
+                        .or_insert(Vec::new());
+                    x_intersections.push((x, z, n));
+                }
+                x += tx;
+                y += 1.0;
+                z += tz;
+                n += tn;
+            }
+        }
+
+        for (_, intersections) in intersections.iter_mut() {
+            intersections.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        }
+
+        intersections
+    }
+
     /// Pinta um pixel no buffer de imagem.
     fn paint(
         &mut self,
@@ -883,7 +943,7 @@ impl Render {
                 continue;
             }
 
-            let intersections = Self::calc_intersections(&vertices_srt, face);
+            let intersections = Self::calc_intersections_for_phong(&vertices_srt, &vertex_normals, face);
 
             for (i, scaline_intersections) in intersections.iter() {
                 if scaline_intersections.len() < 2 {
@@ -899,8 +959,10 @@ impl Render {
                 while counter < scaline_intersections.len() {
                     let x0: usize = scaline_intersections[counter].0.ceil() as usize;
                     let z0: f32 = scaline_intersections[counter].1;
+                    let n0: Vec3 = scaline_intersections[counter].2;
                     let x1: usize = scaline_intersections[counter + 1].0.floor() as usize;
                     let z1: f32 = scaline_intersections[counter + 1].1;
+                    let n1: Vec3 = scaline_intersections[counter + 1].2;
 
                     counter += 2;
 
@@ -910,9 +972,12 @@ impl Render {
 
                     let dx = (x1 - x0) as f32;
                     let dz = z1 - z0;
+                    let dn = n1 - n0;
                     let tz = dz / dx;
+                    let tn = dn / dx;
 
                     let mut z: f32 = z0;
+                    let mut n: Vec3 = n0;
 
                     for j in x0..=x1 {
                         if j >= self.buffer_width {
@@ -924,46 +989,15 @@ impl Render {
                         if z > self.zbuffer[z_index] {
                             let position = Vec3::new(j as f32, *i as f32, z);
                             let direction = (self.camera.vrp - position).normalize();
+                            let normal = n.normalize();
 
-                            // Interpolate normals
-                            let t = (j as f32 - x0 as f32) / dx;
-                            let normal = vertex_normals[face.vertices[0]] * (1.0 - t) + vertex_normals[face.vertices[1]] * t;
-                            let normal = normal.normalize();
-
-                            // Calculate color with interpolated normal and reflection
-                            let ln: Vec3 = (self.light.l - position).normalize();
-                            let id_dot = normal.dot(&ln);
-                            let r: Vec3 = 2.0 * id_dot * normal - ln;
-                            let is_dot = r.dot(&direction);
-
-                            let mut it: Vec3 = Vec3::zeros();
-                            for k in 0..3 {
-                                let ia = self.light.ila[k] * ka[k];
-                                it[k] += ia;
-
-                                if id_dot > 0.0 {
-                                    let id = self.light.il[k] * kd[k] * id_dot;
-                                    it[k] += id;
-
-                                    if is_dot > 0.0 {
-                                        let is = self.light.il[k] * ks[k] * is_dot.powf(self.light.n);
-                                        it[k] += is;
-                                    }
-                                }
-
-                                if it[k] < 0.0 {
-                                    it[k] = 0.0;
-                                } else if it[k] > 255.0 {
-                                    it[k] = 255.0;
-                                }
-                            }
-
-                            let color = [it[0] as u8, it[1] as u8, it[2] as u8, 255];
+                            let color = self.calc_color(&ka, &kd, &ks, &position, &direction, &normal);
                             self.paint(*i, j, color);
                             self.zbuffer[z_index] = z;
                         }
 
                         z += tz;
+                        n += tn;
                     }
                 }
             }
