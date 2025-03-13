@@ -187,13 +187,13 @@ impl Render {
         i: i32,
         j: i32,
     ) -> (i32, i32) {
-        //let ni = (i - self.viewport.vmin) / (self.viewport.vmax - self.viewport.vmin);
-        //let nj = (j - self.viewport.umin) / (self.viewport.umax - self.viewport.umin);
+        let ni = (i as f32 - self.viewport.vmin) / (self.viewport.vmax - self.viewport.vmin);
+        let nj = (j as f32 - self.viewport.umin) / (self.viewport.umax - self.viewport.umin);
 
-        //let y = (ni * (self.buffer_height as f32 - 1.0)) as i32;
-        //let x = (nj * (self.buffer_width as f32 - 1.0)) as i32;
+        let y = (ni * (self.buffer_height as f32 - 1.0)).round() as i32;
+        let x = (nj * (self.buffer_width as f32 - 1.0)).round() as i32;
 
-        (i, j)
+        (y, x)
     }
 
     /// Seta um Z no ZBuffer.
