@@ -121,6 +121,119 @@ impl Render {
         self.zbuffer = vec![-INFINITY; self.zbuffer.len()];
     }
 
+    /// Algoritmo para desenho de linhas.
+    fn draw_line(
+        &mut self,
+        start: &Vec3,
+        end: &Vec3,
+        color: [u8; 4],
+    ) {
+        let x0 = start.x as i32;
+        let y0 = start.y as i32;
+        let x1 = end.x as i32;
+        let y1 = end.y as i32;
+
+        let dx = (x1 - x0).abs();
+        let dy = (y1 - y0).abs();
+
+        let sx = if x0 < x1 { 1 } else { -1 };
+        let sy = if y0 < y1 { 1 } else { -1 };
+
+        let mut x = x0;
+        let mut y = y0;
+
+        let mut err = dx - dy;
+
+        loop {
+            self.paint(y, x, color);
+
+            if x == x1 && y == y1 {
+                break;
+            }
+
+            let e2 = 2 * err;
+
+            if e2 > -dy {
+                err -= dy;
+                x += sx;
+            }
+
+            if e2 < dx {
+                err += dx;
+                y += sy;
+            }
+        }
+    }
+
+    /// Verifica se o índice i é válido.
+    fn is_valid_i(
+        &self,
+        i: i32,
+    ) -> bool {
+        i >= 0 && i <= self.buffer_height as i32
+    }
+
+    /// Verifica se o índice j é válido.
+    fn is_valid_j(
+        &self,
+        j: i32,
+    ) -> bool {
+        j >= 0 && j <= self.buffer_width as i32
+    }
+
+    /// Seta um Z no ZBuffer.
+    fn set_zbuffer(
+        &mut self,
+        i: i32,
+        j: i32,
+        z: f32,
+    ) {
+        let i  = i as usize;
+        let j  = j as usize;
+        let index = i * self.buffer_width + j;
+        self.zbuffer[index] = z;
+    }
+
+    /// Verifica se um pixel pode ser pintado.
+    fn can_paint(
+        &self,
+        i: i32,
+        j: i32,
+        z: f32,
+    ) -> bool {
+        let i  = i as usize;
+        let j  = j as usize;
+        let index = i * self.buffer_width + j;
+        z > self.zbuffer[index]
+    }
+
+    /// Pinta um pixel no buffer de imagem.
+    fn paint(
+        &mut self,
+        i: i32,
+        j: i32,
+        color: [u8; 4],
+    ) {
+        //let ni = (i as f32 - self.viewport.vmin) / (self.viewport.vmax - self.viewport.vmin);
+        //let nj = (j as f32 - self.viewport.umin) / (self.viewport.umax - self.viewport.umin);
+
+        //let y = (ni * (self.buffer_height as f32 - 1.0)) as usize;
+        //let x = (nj * (self.buffer_width as f32 - 1.0)) as usize;
+
+        let y = i as usize;
+        let x = j as usize;
+
+        //if (x >= self.buffer_width) || (y >= self.buffer_height) {
+        //    return;
+        //}
+
+        let index = ((y * self.buffer_width) + x) * 4;
+        self.buffer[index]     = color[0];
+        self.buffer[index + 1] = color[1];
+        self.buffer[index + 2] = color[2];
+        self.buffer[index + 3] = color[3];
+    }
+
     /// Calcula o teste de visibilidade das arestas da malha.
     fn calc_visibility(
         &self,
@@ -200,7 +313,7 @@ impl Render {
     pub fn calc_intersections(
         vertices_srt: &[Vec3],
         face: &Face,
-    ) -> HashMap<usize, Vec<(f32, f32)>> {
+    ) -> HashMap<i32, Vec<(f32, f32)>> {
         let mut intersections = HashMap::new();
 
         for i in 0..face.vertices.len() - 1 {
@@ -237,7 +350,7 @@ impl Render {
 
             while y < y1 {
                 if y >= 0.0 {
-                    let x_intersections = intersections.entry(y as usize)
+                    let x_intersections = intersections.entry(y as i32)
                         .or_insert(Vec::new());
                     x_intersections.push((x, z));
                 }
@@ -259,7 +372,7 @@ impl Render {
         vertices_srt: &[Vec3],
         intensities: &[Vec3],
         face: &Face,
-    ) -> HashMap<usize, Vec<(f32, f32, f32, f32, f32)>> {
+    ) -> HashMap<i32, Vec<(f32, f32, f32, f32, f32)>> {
         let mut intersections = HashMap::new();
 
         for i in 0..face.vertices.len() - 1 {
@@ -325,7 +438,7 @@ impl Render {
 
             while y < y1 {
                 if y >= 0.0 {
-                    let x_intersections = intersections.entry(y as usize)
+                    let x_intersections = intersections.entry(y as i32)
                         .or_insert(Vec::new());
                     x_intersections.push((x, z, r, g, b));
                 }
@@ -350,7 +463,7 @@ impl Render {
         vertices_srt: &[Vec3],
         normals: &[Vec3],
         face: &Face,
-    ) -> HashMap<usize, Vec<(f32, f32, Vec3)>> {
+    ) -> HashMap<i32, Vec<(f32, f32, Vec3)>> {
         let mut intersections = HashMap::new();
 
         for i in 0..face.vertices.len() - 1 {
@@ -361,8 +474,8 @@ impl Render {
             let mut y1 = vertices_srt[face.vertices[i + 1]].y.round();
             let mut z1 = vertices_srt[face.vertices[i + 1]].z;
 
-            let mut n0 = normals[face.vertices[i]];
-            let mut n1 = normals[face.vertices[i + 1]];
+            let mut n0: Vec3 = normals[face.vertices[i]];
+            let mut n1: Vec3 = normals[face.vertices[i + 1]];
 
             if y0 > y1 {
                 std::mem::swap(&mut x0, &mut x1);
@@ -387,7 +500,7 @@ impl Render {
 
             while y < y1 {
                 if y >= 0.0 {
-                    let x_intersections = intersections.entry(y as usize)
+                    let x_intersections = intersections.entry(y as i32)
                         .or_insert(Vec::new());
                     x_intersections.push((x, z, n));
                 }
@@ -404,228 +517,6 @@ impl Render {
 
         intersections
     }
-
-    /// Pinta um pixel no buffer de imagem.
-    fn paint(
-        &mut self,
-        i: usize,
-        j: usize,
-        color: [u8; 4],
-    ) {
-        if self.buffer_width <= j {
-            return;
-        }
-        if self.buffer_height <= i {
-            return;
-        }
-
-        let index = ((i * self.buffer_width) + j) * 4;
-
-        self.buffer[index]     = color[0];
-        self.buffer[index + 1] = color[1];
-        self.buffer[index + 2] = color[2];
-        self.buffer[index + 3] = color[3];
-    }
-
-    /// Renderiza as faces de uma malha.
-    pub fn render(
-        &mut self,
-        object: &mut Object,
-        primary_edge_color: [u8; 4],
-        secondary_edge_color: [u8; 4],
-    ) {
-        match self.shader_type {
-            ShaderType::Wireframe => {
-                self.render_wireframe(object, primary_edge_color, secondary_edge_color);
-            }
-            ShaderType::Flat => {
-                self.render_flat(object);
-            }
-            ShaderType::Gouraud => {
-                self.render_gouraud(object);
-            }
-            ShaderType::Phong => {
-                self.render_phong(object);
-            }
-        }
-    }
-
-    /// Algoritmo para desenho de linhas 3D.
-    fn draw_line(
-        &mut self,
-        start: &Vec3,
-        end: &Vec3,
-        color: [u8; 4],
-    ) {
-        let x0 = start.x as isize;
-        let y0 = start.y as isize;
-        let z0 = start.z;
-        let x1 = end.x as isize;
-        let y1 = end.y as isize;
-        let z1 = end.z;
-
-        let dx = (x1 - x0).abs();
-        let dy = (y1 - y0).abs();
-
-        let sx = if x0 < x1 { 1 } else { -1 };
-        let sy = if y0 < y1 { 1 } else { -1 };
-
-        let mut x = x0;
-        let mut y = y0;
-
-        let mut err = dx - dy;
-
-        let mut points = Vec::new();
-
-        loop {
-            points.push((x as usize, y as usize));
-
-            if x == x1 && y == y1 {
-                break;
-            }
-
-            let e2 = 2 * err;
-
-            if e2 > -dy {
-                err -= dy;
-                x += sx;
-            }
-
-            if e2 < dx {
-                err += dx;
-                y += sy;
-            }
-        }
-
-        let dz = z1 - z0;
-        let tz = dz / points.len() as f32;
-        let mut z = z0;
-
-        for k in 0..points.len() {
-            let (j, i) = points[k];
-
-            if i >= self.buffer_height {
-                continue;
-            }
-            if j >= self.buffer_width {
-                continue;
-            }
-
-            let zbuffer_index = i * self.buffer_width + j;
-            if z > self.zbuffer[zbuffer_index] {
-                self.paint(i, j, color);
-                self.zbuffer[zbuffer_index] = z;
-            }
-            z += tz;
-        }
-    }
-
-    /// Pinta as arestas da malha com o algoritmo de Bresenham adaptado para 3D.
-    fn draw_wireframe_edges(
-        &mut self,
-        vertices_srt: &[Vec3],
-        edges: &[Edge],
-        primary_edge_color: [u8; 4],
-        secondary_edge_color: [u8; 4],
-    ) {
-        for edge in edges.iter() {
-            let start = &vertices_srt[edge.vertices[0]];
-            let end = &vertices_srt[edge.vertices[1]];
-            if edge.visible {
-                self.draw_line(start, end, primary_edge_color);
-            } else {
-                self.draw_line(start, end, secondary_edge_color);
-            }
-        }
-    }
-
-    /// Preenche as faces da malha com a técnica de wireframe.
-    fn render_wireframe(
-        &mut self,
-        object: &mut Object,
-        primary_edge_color: [u8; 4],
-        secondary_edge_color: [u8; 4],
-    ) {
-        let vertices_srt = self.calc_srt_convertions(&object.vertices);
-
-        for face in object.faces.iter_mut() {
-            face.calc_normal(&object.vertices);
-            face.calc_centroid(&object.vertices);
-            face.calc_direction(&self.camera.vrp);
-            self.calc_visibility(face, &mut object.edges);
-        }
-
-        let mut faces = object.faces.clone();
-        faces.sort_by(|a, b| {
-            let a_depth = a.vertices.iter().map(|&i| vertices_srt[i].z).sum::<f32>() / a.vertices.len() as f32;
-            let b_depth = b.vertices.iter().map(|&i| vertices_srt[i].z).sum::<f32>() / b.vertices.len() as f32;
-            let a_depth = OrderedFloat(a_depth);
-            let b_depth = OrderedFloat(b_depth);
-            a_depth.cmp(&b_depth)
-        });
-
-        // Para cada face, calcula as interseções da scanline
-        for face in faces.iter_mut() {
-            if self.visibility_filter && !face.visible {
-                continue;
-            }
-
-            let intersections = Self::calc_intersections(&vertices_srt, face);
-
-            // Para cada scanline i
-            for (i, scaline_intersections) in intersections.iter() {
-                if scaline_intersections.len() < 2 {
-                    continue;
-                }
-
-                if *i >= self.buffer_height as usize {
-                    continue;
-                }
-
-                let mut counter = 0;
-
-                // Para cada par de interseções da scanline
-                while counter < scaline_intersections.len() {
-                    let x0: usize = scaline_intersections[counter].0.ceil() as usize;
-                    let x1: usize = scaline_intersections[counter + 1].0.floor() as usize;
-                    let z0: f32 = scaline_intersections[counter].1;
-                    let z1: f32 = scaline_intersections[counter + 1].1;
-
-                    counter += 2;
-
-                    if x1 < x0 {
-                        continue;
-                    }
-
-                    let dx = (x1 - x0) as f32;
-                    let dz = z1 - z0;
-                    let tz = dz / dx;
-
-                    let mut z: f32 = z0;
-
-                    // Para cada pixel na scanline
-                    for j in x0..=x1 {
-                        if j >= self.buffer_width {
-                            continue;
-                        }
-
-                        let z_index = i * self.buffer_width + j;
-
-                        if z > self.zbuffer[z_index] {
-                            let color = [0,0,0,0];
-                            self.paint(*i, j, color);
-                            self.zbuffer[z_index] = z;
-                        }
-
-                        z += tz;
-                    }
-                }
-            }
-        }
-
-        self.draw_wireframe_edges(&vertices_srt, &object.edges, primary_edge_color, secondary_edge_color);
-    }
-
 
     /// Calcula a cor de preenchimento da face.
     fn calc_color(
@@ -673,6 +564,106 @@ impl Render {
         [it[0] as u8, it[1] as u8, it[2] as u8, 255]
     }
 
+    /// Renderiza as faces de uma malha.
+    pub fn render(
+        &mut self,
+        object: &mut Object,
+        primary_edge_color: [u8; 4],
+        secondary_edge_color: [u8; 4],
+    ) {
+        match self.shader_type {
+            ShaderType::Wireframe => {
+                self.render_wireframe(object, primary_edge_color, secondary_edge_color);
+            }
+            ShaderType::Flat => {
+                self.render_flat(object);
+            }
+            ShaderType::Gouraud => {
+                self.render_gouraud(object);
+            }
+            ShaderType::Phong => {
+                self.render_phong(object);
+            }
+        }
+    }
+
+    /// Preenche as faces da malha com a técnica de wireframe.
+    fn render_wireframe(
+        &mut self,
+        object: &mut Object,
+        primary_edge_color: [u8; 4],
+        secondary_edge_color: [u8; 4],
+    ) {
+        let vertices_srt = self.calc_srt_convertions(&object.vertices);
+
+        for face in object.faces.iter_mut() {
+            face.calc_normal(&object.vertices);
+            face.calc_centroid(&object.vertices);
+            face.calc_direction(&self.camera.vrp);
+            self.calc_visibility(face, &mut object.edges);
+        }
+
+        let mut faces = object.faces.clone();
+        faces.sort_by(|a, b| {
+            let a_depth = a.vertices.iter().map(|&i| vertices_srt[i].z).sum::<f32>() / a.vertices.len() as f32;
+            let b_depth = b.vertices.iter().map(|&i| vertices_srt[i].z).sum::<f32>() / b.vertices.len() as f32;
+            let a_depth = OrderedFloat(a_depth);
+            let b_depth = OrderedFloat(b_depth);
+            a_depth.cmp(&b_depth)
+        });
+
+        // Para cada face, calcula as interseções da scanline
+        for face in faces.iter_mut() {
+            if self.visibility_filter && !face.visible {
+                continue;
+            }
+
+            let intersections = Self::calc_intersections(&vertices_srt, face);
+
+            // Para cada scanline i
+            for (i, scaline_intersections) in intersections.iter() {
+                if scaline_intersections.len() < 2 {
+                    continue;
+                }
+
+                if !self.is_valid_i(*i) {
+                    continue;
+                }
+
+                let mut counter = 0;
+
+                // Para cada par de interseções da scanline
+                while counter < scaline_intersections.len() {
+                    let x0 = scaline_intersections[counter].0.ceil() as i32;
+                    let x1 = scaline_intersections[counter + 1].0.floor() as i32;
+
+                    counter += 2;
+
+                    if x1 < x0 {
+                        continue;
+                    }
+
+                    for j in x0..=x1 {
+                        if !self.is_valid_j(j) {
+                            continue;
+                        }
+
+                        let color = [0, 0, 0, 0];
+                        self.paint(*i, j, color);
+                    }
+                }
+            }
+
+            let color = if face.visible { primary_edge_color } else { secondary_edge_color };
+
+            for vertex_index in 1..face.vertices.len() {
+                let start: &Vec3 = &vertices_srt[face.vertices[vertex_index - 1]];
+                let end: &Vec3 = &vertices_srt[face.vertices[vertex_index]];
+                self.draw_line(start, end, color);
+            }
+        }
+    }
+
     fn render_flat(
         &mut self,
         object: &mut Object,
@@ -715,7 +706,7 @@ impl Render {
                     continue;
                 }
 
-                if *i >= self.buffer_height as usize {
+                if !self.is_valid_i(*i) {
                     continue;
                 }
 
@@ -723,8 +714,8 @@ impl Render {
 
                 // Para cada par de interseções da scanline
                 while counter < scaline_intersections.len() {
-                    let x0: usize = scaline_intersections[counter].0.ceil() as usize;
-                    let x1: usize = scaline_intersections[counter + 1].0.floor() as usize;
+                    let x0: i32 = scaline_intersections[counter].0.ceil() as i32;
+                    let x1: i32 = scaline_intersections[counter + 1].0.floor() as i32;
                     let z0: f32 = scaline_intersections[counter].1;
                     let z1: f32 = scaline_intersections[counter + 1].1;
 
@@ -742,15 +733,13 @@ impl Render {
 
                     // Para cada pixel na scanline
                     for j in x0..=x1 {
-                        if j >= self.buffer_width {
+                        if !self.is_valid_j(j) {
                             continue;
                         }
 
-                        let z_index = i * self.buffer_width + j;
-
-                        if z > self.zbuffer[z_index] {
+                        if self.can_paint(*i, j, z) {
                             self.paint(*i, j, color);
-                            self.zbuffer[z_index] = z;
+                            self.set_zbuffer(*i, j, z);
                         }
 
                         z += tz;
@@ -786,7 +775,6 @@ impl Render {
             a_depth.cmp(&b_depth)
         });
 
-        // Calculate vertex intensities
         let mut vertex_intensities = vec![Vec3::zeros(); object.vertices.len()];
         for (i, vertex) in object.vertices.iter().enumerate() {
             let mut normal = Vec3::zeros();
@@ -808,7 +796,6 @@ impl Render {
             vertex_intensities[i] = Vec3::new(color[0] as f32, color[1] as f32, color[2] as f32);
         }
 
-        // Render each face
         for face in &mut object.faces {
             if self.visibility_filter && !face.visible {
                 continue;
@@ -816,23 +803,21 @@ impl Render {
 
             let intersections = Self::calc_intersections_for_gouraud(&vertices_srt, &vertex_intensities, face);
 
-            // For each scanline
             for (i, scaline_intersections) in intersections.iter() {
                 if scaline_intersections.len() < 2 {
                     continue;
                 }
 
-                if *i >= self.buffer_height as usize {
+                if !self.is_valid_i(*i) {
                     continue;
                 }
 
                 let mut counter = 0;
 
-                // For each pair of intersections
                 while counter < scaline_intersections.len() {
-                    let x0: usize = scaline_intersections[counter].0.ceil() as usize;
+                    let x0: i32 = scaline_intersections[counter].0.ceil() as i32;
                     let z0: f32 = scaline_intersections[counter].1;
-                    let x1: usize = scaline_intersections[counter + 1].0.floor() as usize;
+                    let x1: i32 = scaline_intersections[counter + 1].0.floor() as i32;
                     let z1: f32 = scaline_intersections[counter + 1].1;
 
                     let r0: f32 = scaline_intersections[counter].2;
@@ -863,23 +848,20 @@ impl Render {
                     let mut g: f32 = g0;
                     let mut b: f32 = b0;
 
-                    // For each pixel in the scanline
                     for j in x0..=x1 {
-                        if j >= self.buffer_width {
+                        if !self.is_valid_j(j) {
                             continue;
                         }
 
-                        let z_index = i * self.buffer_width + j;
-
-                        if z > self.zbuffer[z_index] {
+                        if self.can_paint(*i, j, z) {
                             let color = [
                                 r as u8,
                                 g as u8,
                                 b as u8,
                                 255,
                             ];
-                            self.paint(*i, j, color);
-                            self.zbuffer[z_index] = z;
+                            self.paint(*i as i32, j as i32, color);
+                            self.set_zbuffer(*i, j, z);
                         }
 
                         z += tz;
@@ -918,7 +900,7 @@ impl Render {
             a_depth.cmp(&b_depth)
         });
 
-        // Calculate vertex normals
+
         let mut vertex_normals = vec![Vec3::zeros(); object.vertices.len()];
         for (i, vertex) in object.vertices.iter().enumerate() {
             let mut normal = Vec3::zeros();
@@ -950,17 +932,17 @@ impl Render {
                     continue;
                 }
 
-                if *i >= self.buffer_height as usize {
+                if !self.is_valid_i(*i) {
                     continue;
                 }
 
                 let mut counter = 0;
 
                 while counter < scaline_intersections.len() {
-                    let x0: usize = scaline_intersections[counter].0.ceil() as usize;
+                    let x0: i32 = scaline_intersections[counter].0.ceil() as i32;
                     let z0: f32 = scaline_intersections[counter].1;
                     let n0: Vec3 = scaline_intersections[counter].2;
-                    let x1: usize = scaline_intersections[counter + 1].0.floor() as usize;
+                    let x1: i32 = scaline_intersections[counter + 1].0.floor() as i32;
                     let z1: f32 = scaline_intersections[counter + 1].1;
                     let n1: Vec3 = scaline_intersections[counter + 1].2;
 
@@ -980,20 +962,18 @@ impl Render {
                     let mut n: Vec3 = n0;
 
                     for j in x0..=x1 {
-                        if j >= self.buffer_width {
+                        if !self.is_valid_j(j) {
                             continue;
                         }
 
-                        let z_index = i * self.buffer_width + j;
-
-                        if z > self.zbuffer[z_index] {
+                        if self.can_paint(*i, j, z) {
                             let position = Vec3::new(j as f32, *i as f32, z);
                             let direction = (self.camera.vrp - position).normalize();
                             let normal = n.normalize();
 
                             let color = self.calc_color(&ka, &kd, &ks, &position, &direction, &normal);
-                            self.paint(*i, j, color);
-                            self.zbuffer[z_index] = z;
+                            self.paint(*i as i32, j as i32, color);
+                            self.set_zbuffer(*i, j, z);
                         }
 
                         z += tz;

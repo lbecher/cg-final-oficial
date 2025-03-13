@@ -1,5 +1,4 @@
 mod app;
-mod camera;
 mod constants;
 mod object;
 mod render;
