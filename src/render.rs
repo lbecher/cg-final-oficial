@@ -145,7 +145,9 @@ impl Render {
         let mut err = dx - dy;
 
         loop {
-            self.paint(y, x, color);
+            if self.is_valid_i(y) && self.is_valid_j(x) {
+                self.paint(y, x, color);
+            }
 
             if x == x1 && y == y1 {
                 break;
@@ -170,7 +172,7 @@ impl Render {
         &self,
         i: i32,
     ) -> bool {
-        i >= 0 && i <= self.buffer_height as i32
+        i >= self.viewport.vmin as i32 && i <= self.viewport.vmax as i32
     }
 
     /// Verifica se o índice j é válido.
@@ -178,7 +180,7 @@ impl Render {
         &self,
         j: i32,
     ) -> bool {
-        j >= 0 && j <= self.buffer_width as i32
+        j >= self.viewport.umin as i32 && j <= self.viewport.umax as i32
     }
 
     /// Converte coordenadas SRT para do buffer de imagem.
@@ -901,7 +903,7 @@ impl Render {
 
 
         let mut vertex_normals = vec![Vec3::zeros(); object.vertices.len()];
-        for (i, vertex) in object.vertices.iter().enumerate() {
+        for (i, _vertex) in object.vertices.iter().enumerate() {
             let mut normal = Vec3::zeros();
             let mut count = 0;
 
