@@ -3,7 +3,7 @@ use std::f32::INFINITY;
 use eframe::emath::OrderedFloat;
 
 use crate::constants::*;
-use crate::object::{Edge, Face, Object};
+use crate::object::{Face, Object};
 use crate::types::*;
 
 
@@ -246,20 +246,28 @@ impl Render {
         self.buffer[index + 3] = color[3];
     }
 
+    /// Atualiza as faces da malha.
+    fn update_faces(
+        &self,
+        object: &mut Object
+    ) {
+        for face in object.faces.iter_mut() {
+            face.calc_normal(&object.vertices);
+            face.calc_centroid(&object.vertices);
+            face.calc_direction(&self.camera.vrp);
+            self.calc_visibility(face);
+        }
+    }
+
     /// Calcula o teste de visibilidade das arestas da malha.
     fn calc_visibility(
         &self,
         face: &mut Face,
-        edges: &mut Vec<Edge>,
     ) {
         let o: Vec3 = face.direction;
         let n: Vec3 = face.normal;
         let visibility = o.dot(&n) > 0.0;
-
         face.visible = visibility;
-        for edge_index in face.edges.iter() {
-            edges[*edge_index].visible = visibility;
-        }
     }
 
     /// Calcula a matriz de transformação de coordenadas em SRU para SRC.
@@ -606,14 +614,8 @@ impl Render {
         primary_edge_color: [u8; 4],
         secondary_edge_color: [u8; 4],
     ) {
+        self.update_faces(object);
         let vertices_srt = self.calc_srt_convertions(&object.vertices);
-
-        for face in object.faces.iter_mut() {
-            face.calc_normal(&object.vertices);
-            face.calc_centroid(&object.vertices);
-            face.calc_direction(&self.camera.vrp);
-            self.calc_visibility(face, &mut object.edges);
-        }
 
         let mut faces = object.faces.clone();
         faces.sort_by(|a, b| {
@@ -680,18 +682,13 @@ impl Render {
         &mut self,
         object: &mut Object,
     ) {
+        self.update_faces(object);
+
         let ka: Vec3 = object.ka;
         let kd: Vec3 = object.kd;
         let ks: Vec3 = object.ks;
 
         let vertices_srt = self.calc_srt_convertions(&object.vertices);
-
-        for face in object.faces.iter_mut() {
-            face.calc_normal(&object.vertices);
-            face.calc_centroid(&object.vertices);
-            face.calc_direction(&self.camera.vrp);
-            self.calc_visibility(face, &mut object.edges);
-        }
 
         let mut faces = object.faces.clone();
         faces.sort_by(|a, b| {
@@ -765,18 +762,13 @@ impl Render {
         &mut self,
         object: &mut Object,
     ) {
+        self.update_faces(object);
+
         let ka: Vec3 = object.ka;
         let kd: Vec3 = object.kd;
         let ks: Vec3 = object.ks;
 
         let vertices_srt = self.calc_srt_convertions(&object.vertices);
-
-        for face in object.faces.iter_mut() {
-            face.calc_normal(&object.vertices);
-            face.calc_centroid(&object.vertices);
-            face.calc_direction(&self.camera.vrp);
-            self.calc_visibility(face, &mut object.edges);
-        }
 
         let mut faces = object.faces.clone();
         faces.sort_by(|a, b| {
@@ -890,18 +882,13 @@ impl Render {
         &mut self,
         object: &mut Object,
     ) {
+        self.update_faces(object);
+
         let ka: Vec3 = object.ka;
         let kd: Vec3 = object.kd;
         let ks: Vec3 = object.ks;
 
         let vertices_srt = self.calc_srt_convertions(&object.vertices);
-
-        for face in object.faces.iter_mut() {
-            face.calc_normal(&object.vertices);
-            face.calc_centroid(&object.vertices);
-            face.calc_direction(&self.camera.vrp);
-            self.calc_visibility(face, &mut object.edges);
-        }
 
         let mut faces = object.faces.clone();
         faces.sort_by(|a, b| {

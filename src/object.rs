@@ -5,15 +5,8 @@ use crate::constants::*;
 use crate::types::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Edge {
-    pub vertices: [usize; 2],
-    pub visible: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Face {
     pub vertices: Vec<usize>,
-    pub edges: Vec<usize>,
     pub visible: bool,
     pub normal: Vec3,
     pub direction: Vec3,
@@ -70,8 +63,6 @@ pub struct Object {
 
     /// Vértices da malha.
     pub vertices: Vec<Vec3>,
-    /// Arestas da malha.
-    pub edges: Vec<Edge>,
     /// Faces da malha.
     pub faces: Vec<Face>,
     /// Centroide da malha.
@@ -106,7 +97,6 @@ impl Object {
         let knots_j: Vec<f32> = Self::spline_knots(nj, TJ);
 
         let vertices: Vec<Vec3> = Vec::with_capacity(resi * resj);
-        let edges: Vec<Edge> = Vec::with_capacity(resj*(resi - 1) + resi*(resj - 1));
         let faces: Vec<Face> = Vec::with_capacity((resi - 1) * (resj - 1));
 
         let mut obj = Self {
@@ -119,7 +109,6 @@ impl Object {
 
             control_points,
             vertices,
-            edges,
             faces,
 
             centroid: Vec3::zeros(),
@@ -361,55 +350,13 @@ impl Object {
     fn calc_edges_and_faces_tri(&mut self) {
         for i in 0..self.resi - 1 {
             for j in 0..self.resj - 1 {
-                // Nada novo sob o sol, apenas mantendo o sentido anti-horário.
                 let a_index = (i + 1) * self.resj + j;
                 let b_index = (i + 1) * self.resj + (j + 1);
                 let c_index = i * self.resj + (j + 1);
                 let d_index = i * self.resj + j;
 
-                // IMPORTANTE!
-                // Usamos as arestas (edges) apenas para desenhar as arestas do Wireframe.
-
-                // Devemos garantir que as arestas sejam únicas.
-                // Para isso, vamos sempre adicionar as arestas
-                // da diagonal, da direita e de cima como novas arestas.
-                let ac_index = self.edges.len();
-                self.edges.push(Edge { vertices: [a_index, c_index], visible: false });
-
-                let bc_index = ac_index + 1;
-                self.edges.push(Edge { vertices: [b_index, c_index], visible: false });
-
-                let cd_index = bc_index + 1;
-                self.edges.push(Edge { vertices: [c_index, d_index], visible: false });
-
-                // Já as arestas da esquerda e de baixo são adicionadas
-                // como novas caso estejam na posição inicial. Caso contrário,
-                // usamos as arestas já existentes das faces anteriores.
-                let ab_index: usize;
-                if i == 0 {
-                    ab_index = self.edges.len();
-                    self.edges.push(Edge { vertices: [a_index, b_index], visible: false });
-                } else {
-                    let index = (i - 1) * (self.resj - 1) + (j * 2) + 1;
-                    ab_index = self.faces[index].edges[1];
-                };
-
-                let da_index: usize;
-                if j == 0 {
-                    da_index = self.edges.len();
-                    self.edges.push(Edge { vertices: [d_index, a_index], visible: false });
-                } else {
-                    let index = i * (self.resj - 1) + ((j - 1) * 2);
-                    da_index = self.faces[index].edges[1];
-                };
-
-                // Usamos as faces para o peenchimento.
-                // Armazenamos os índices das arestas para depois
-                // poder modificar o atributo visible com o resultado do teste
-                // de visibilidade e atribuir a cor correta da aretas.
                 let abc_face = Face {
                     vertices: vec![a_index, b_index, c_index, a_index],
-                    edges: vec![ab_index, bc_index, ac_index],
                     visible: false,
                     normal: Vec3::zeros(),
                     direction: Vec3::zeros(),
@@ -419,7 +366,6 @@ impl Object {
 
                 let acd_face = Face {
                     vertices: vec![a_index, c_index, d_index, a_index],
-                    edges: vec![ac_index, cd_index, da_index],
                     visible: false,
                     normal: Vec3::zeros(),
                     direction: Vec3::zeros(),
@@ -433,52 +379,13 @@ impl Object {
     fn calc_edges_and_faces_quad(&mut self) {
         for i in 0..self.resi - 1 {
             for j in 0..self.resj - 1 {
-                // Nada novo sob o sol, apenas mantendo o sentido anti-horário.
                 let a_index = (i + 1) * self.resj + j;
                 let b_index = (i + 1) * self.resj + (j + 1);
                 let c_index = i * self.resj + (j + 1);
                 let d_index = i * self.resj + j;
 
-                // IMPORTANTE!
-                // Usamos as arestas (edges) apenas para desenhar as arestas do Wireframe.
-
-                // Devemos garantir que as arestas sejam únicas.
-                // Para isso, vamos sempre adicionar as arestas
-                // da diagonal, da direita e de cima como novas arestas.
-                let bc_index = self.edges.len();
-                self.edges.push(Edge { vertices: [b_index, c_index], visible: false });
-
-                let cd_index = bc_index + 1;
-                self.edges.push(Edge { vertices: [c_index, d_index], visible: false });
-
-                // Já as arestas da esquerda e de baixo são adicionadas
-                // como novas caso estejam na posição inicial. Caso contrário,
-                // usamos as arestas já existentes das faces anteriores.
-                let ab_index: usize;
-                if i == 0 {
-                    ab_index = self.edges.len();
-                    self.edges.push(Edge { vertices: [a_index, b_index], visible: false });
-                } else {
-                    let index = (i - 1) * (self.resj - 1) + j;
-                    ab_index = self.faces[index].edges[2];
-                };
-
-                let da_index: usize;
-                if j == 0 {
-                    da_index = self.edges.len();
-                    self.edges.push(Edge { vertices: [d_index, a_index], visible: false });
-                } else {
-                    let index = i * (self.resj - 1) + (j - 1);
-                    da_index = self.faces[index].edges[1];
-                };
-
-                // Usamos as faces para o peenchimento.
-                // Armazenamos os índices das arestas para depois
-                // poder modificar o atributo visible com o resultado do teste
-                // de visibilidade e atribuir a cor correta da aretas.
                 let face = Face {
                     vertices: vec![a_index, b_index, c_index, d_index, a_index],
-                    edges: vec![ab_index, bc_index, cd_index, da_index],
                     visible: false,
                     normal: Vec3::zeros(),
                     direction: Vec3::zeros(),
@@ -491,7 +398,6 @@ impl Object {
 
     // Novo método para gerar arestas e faces com base na flag use_triangular_faces
     pub fn calc_edges_and_faces(&mut self) {
-        self.edges.clear();
         self.faces.clear();
         if USE_TRIANGULAR_FACES {
             self.calc_edges_and_faces_tri();
