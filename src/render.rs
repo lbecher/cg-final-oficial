@@ -181,6 +181,21 @@ impl Render {
         j >= 0 && j <= self.buffer_width as i32
     }
 
+    /// Converte coordenadas SRT para do buffer de imagem.
+    fn srt_to_buffer(
+        &self,
+        i: i32,
+        j: i32,
+    ) -> (i32, i32) {
+        //let ni = (i - self.viewport.vmin) / (self.viewport.vmax - self.viewport.vmin);
+        //let nj = (j - self.viewport.umin) / (self.viewport.umax - self.viewport.umin);
+
+        //let y = (ni * (self.buffer_height as f32 - 1.0)) as i32;
+        //let x = (nj * (self.buffer_width as f32 - 1.0)) as i32;
+
+        (i, j)
+    }
+
     /// Seta um Z no ZBuffer.
     fn set_zbuffer(
         &mut self,
@@ -188,9 +203,10 @@ impl Render {
         j: i32,
         z: f32,
     ) {
-        let i  = i as usize;
-        let j  = j as usize;
-        let index = i * self.buffer_width + j;
+        let (y, x) = self.srt_to_buffer(i, j);
+        let x = x as usize;
+        let y = y as usize;
+        let index = y * self.buffer_width + x;
         self.zbuffer[index] = z;
     }
 
@@ -201,9 +217,10 @@ impl Render {
         j: i32,
         z: f32,
     ) -> bool {
-        let i  = i as usize;
-        let j  = j as usize;
-        let index = i * self.buffer_width + j;
+        let (y, x) = self.srt_to_buffer(i, j);
+        let x = x as usize;
+        let y = y as usize;
+        let index = y * self.buffer_width + x;
         z > self.zbuffer[index]
     }
 
@@ -214,20 +231,15 @@ impl Render {
         j: i32,
         color: [u8; 4],
     ) {
-        //let ni = (i as f32 - self.viewport.vmin) / (self.viewport.vmax - self.viewport.vmin);
-        //let nj = (j as f32 - self.viewport.umin) / (self.viewport.umax - self.viewport.umin);
-
-        //let y = (ni * (self.buffer_height as f32 - 1.0)) as usize;
-        //let x = (nj * (self.buffer_width as f32 - 1.0)) as usize;
-
-        let y = i as usize;
-        let x = j as usize;
+        let (y, x) = self.srt_to_buffer(i, j);
+        let x = x as usize;
+        let y = y as usize;
 
         //if (x >= self.buffer_width) || (y >= self.buffer_height) {
         //    return;
         //}
 
-        let index = ((y * self.buffer_width) + x) * 4;
+        let index = (y * self.buffer_width + x) * 4;
         self.buffer[index]     = color[0];
         self.buffer[index + 1] = color[1];
         self.buffer[index + 2] = color[2];
