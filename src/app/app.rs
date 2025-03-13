@@ -112,6 +112,8 @@ impl Default for App {
             l: VectorInputData::new(render.light.l.x, render.light.l.y, render.light.l.z),
             il: ColorInputData::new(render.light.il.x, render.light.il.y, render.light.il.z),
             ila: ColorInputData::new(render.light.ila.x, render.light.ila.y, render.light.ila.z),
+            n,
+            n_value,
 
             render_duration: Duration::default(),
 
@@ -134,8 +136,6 @@ impl Default for App {
             kd_value,
             ks,
             ks_value,
-            n,
-            n_value,
 
             scale: "1.0".to_string(),
             scale_value: 1.0,

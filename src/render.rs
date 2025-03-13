@@ -39,7 +39,6 @@ pub struct Light {
     pub l: Vec3,
     pub il: Vec3,
     pub ila: Vec3,
-    pub n: f32,
 }
 
 pub struct Render {
@@ -61,7 +60,7 @@ impl Default for Render {
     fn default() -> Self {
         let shader_type = ShaderType::Wireframe;
         let camera = Camera {
-            vrp: Vec3::new(0.0, 0.0, 400.0),
+            vrp: Vec3::new(0.0, 0.0, 2000.0),
             p: Vec3::new(0.0, 0.0, 0.0),
             y: Vec3::new(0.0, 1.0, 0.0),
         };
@@ -81,7 +80,6 @@ impl Default for Render {
             l: Vec3::new(300.0, 0.0, 0.0),
             il: Vec3::new(0.0, 200.0, 0.0),
             ila: Vec3::new(100.0, 0.0, 0.0),
-            n: 2.0,
         };
 
         let m_sru_srt = Mat4::identity();
@@ -554,6 +552,7 @@ impl Render {
         position: &Vec3,
         direction: &Vec3,
         normal: &Vec3,
+        n: f32,
     ) -> [u8; 4] {
         let mut it: Vec3 = Vec3::zeros();
 
@@ -571,7 +570,49 @@ impl Render {
                 it[i] += id;
 
                 if is_dot > 0.0 {
-                    let is = self.light.il[i] * ks[i] * is_dot.powf(self.light.n);
+                    let is = self.light.il[i] * ks[i] * is_dot.powf(n);
+                    it[i] += is;
+                };
+            }
+
+            if it[i] < 0.0 {
+                it[i] = 0.0;
+            } else if it[i] > 255.0 {
+                it[i] = 255.0;
+            }
+        }
+
+        [it[0] as u8, it[1] as u8, it[2] as u8, 255]
+    }
+
+    /// Calcula a cor de preenchimento da face para Phong.
+    fn calc_color_for_phong(
+        &self,
+        ka: &Vec3,
+        kd: &Vec3,
+        ks: &Vec3,
+        position: &Vec3,
+        sn: &Vec3,
+        nn: &Vec3,
+        n: f32,
+    ) -> [u8; 4] {
+        let mut it: Vec3 = Vec3::zeros();
+
+        let ln: Vec3 = (self.light.l - position).normalize();
+        let id_dot = nn.dot(&ln);
+        let hn: Vec3 = (ln + sn).normalize();
+        let is_dot = nn.dot(&hn);
+
+        for i in 0..3 {
+            let ia = self.light.ila[i] * ka[i];
+            it[i] += ia;
+
+            if id_dot > 0.0 {
+                let id = self.light.il[i] * kd[i] * id_dot;
+                it[i] += id;
+
+                if is_dot > 0.0 {
+                    let is = self.light.il[i] * ks[i] * is_dot.powf(n);
                     it[i] += is;
                 };
             }
@@ -707,7 +748,7 @@ impl Render {
             }
 
             let direction: Vec3 = (self.camera.vrp - face.centroid).normalize();
-            let color = self.calc_color(&ka, &kd, &ks, &face.centroid, &direction, &face.normal);
+            let color = self.calc_color(&ka, &kd, &ks, &face.centroid, &direction, &face.normal, object.n);
 
             let intersections = Self::calc_intersections(&vertices_srt, face);
 
@@ -798,7 +839,7 @@ impl Render {
             }
 
             let direction = (self.camera.vrp - *vertex).normalize();
-            let color = self.calc_color(&ka, &kd, &ks, vertex, &direction, &normal);
+            let color = self.calc_color(&ka, &kd, &ks, vertex, &direction, &normal, object.n);
             vertex_intensities[i] = Vec3::new(color[0] as f32, color[1] as f32, color[2] as f32);
         }
 
@@ -902,23 +943,15 @@ impl Render {
         });
 
 
-        let mut vertex_normals = vec![Vec3::zeros(); object.vertices.len()];
-        for (i, _vertex) in object.vertices.iter().enumerate() {
+        let mut vertex_normals: Vec<Vec3> = Vec::new();
+        for i in 0..object.vertices.len() {
             let mut normal = Vec3::zeros();
-            let mut count = 0;
-
             for face in &object.faces {
                 if face.vertices.contains(&i) {
                     normal += face.normal;
-                    count += 1;
                 }
             }
-
-            if count > 0 {
-                normal = normal.normalize();
-            }
-
-            vertex_normals[i] = normal;
+            vertex_normals.push(normal.normalize());
         }
 
         for face in faces.iter_mut() {
@@ -968,11 +1001,11 @@ impl Render {
                         }
 
                         if self.can_paint(*i, j, z) {
-                            let position = Vec3::new(j as f32, *i as f32, z);
-                            let direction = (self.camera.vrp - position).normalize();
-                            let normal = n.normalize();
+                            let position: Vec3 = object.centroid;
+                            let sn: Vec3 = (self.camera.vrp - object.centroid).normalize();
+                            let nn: Vec3 = n.normalize();
 
-                            let color = self.calc_color(&ka, &kd, &ks, &position, &direction, &normal);
+                            let color = self.calc_color_for_phong(&ka, &kd, &ks, &position, &sn, &nn, object.n);
                             self.paint(*i as i32, j as i32, color);
                             self.set_zbuffer(*i, j, z);
                         }
