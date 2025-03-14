@@ -65,6 +65,7 @@ pub struct App {
     show_control_points: bool,
 
     cylinder: bool,
+    show_info: bool,
 }
 
 impl Default for App {
@@ -97,10 +98,12 @@ impl Default for App {
         let resi = format!("RESI: {}", resi_value);
         let resj = format!("RESJ: {}", resj_value);
         let smoothness = format!("Passos: {}", smoothness_value);
+        let show_info = false;
 
         let mut obj = Self {
             objects,
             selected_object,
+            show_info,
 
             primary_color: [0, 255, 0, 255],
             secondary_color: [255, 0, 0, 255],
@@ -213,6 +216,28 @@ impl App {
     pub fn side_panel_content(&mut self, ui: &mut Ui) {
         let mut redraw = false;
 
+        // Botão de Info
+        if ui.button("Sobre").clicked() {
+            self.show_info = !self.show_info; // Alterna a visibilidade do painel de informações
+        }
+
+        // Exibe as informações quando show_info é verdadeiro
+        if self.show_info {
+            // só perfumaria
+            ui.separator();
+            ui.heading("Desenvolvedores:");
+            ui.label("Luiz Becher de Araujo");
+            ui.label("Heloisa Aparecida Alves");
+            ui.label("Matheus Lucas Ferreira Jacinto");
+            ui.separator();
+            ui.heading("Desenvolvimento:");
+            ui.label("Ano: 2025");
+            ui.label("Linguagem: Rust");
+            ui.label("Repositório:");
+        }
+
+        ui.separator();
+
         ui.heading("Projeto");
         if ui.button("Salvar projeto").clicked() {
             if let Some(path) = rfd::FileDialog::new().save_file() {
@@ -237,26 +262,42 @@ impl App {
 
         ui.separator();
 
+        ui.heading("Dimensões da Viewport");
+        ui.horizontal(|ui| {
+            ui.label("Largura:");
+        });
+        ui.horizontal(|ui| {
+            ui.label("Altura:");
+        });
+
+        ui.separator();
+
         ui.heading("Arestas");
         ui.horizontal( |ui| {
             ui.label("Cor primaria:");
             ui.color_edit_button_srgba_unmultiplied(&mut self.primary_color);
         });
+
         ui.horizontal( |ui| {
             ui.label("Cor secundaria:");
             ui.color_edit_button_srgba_unmultiplied(&mut self.secondary_color);
         });
 
+        //ui.heading("Aplicar Cores");
+        if ui.button("Aplicar Cores").clicked() {
+            self.redraw();
+        }
+
         ui.separator();
 
         ui.heading("Sombreamento");
+        ui.label(format!("Tempo de renderização: {:?} ms", self.render_duration.as_millis()));
         let old_shader = self.render.shader_type.clone();
         let old_visibility_filter = self.render.visibility_filter;
         ui.radio_value(&mut self.render.shader_type, ShaderType::Wireframe, "Aramado");
         ui.radio_value(&mut self.render.shader_type, ShaderType::Flat, "Constante");
         ui.radio_value(&mut self.render.shader_type, ShaderType::Gouraud, "Gouraud");
         ui.radio_value(&mut self.render.shader_type, ShaderType::Phong, "Phong");
-        ui.label(format!("Tempo de renderização: {:?} ms", self.render_duration.as_millis()));
         ui.checkbox(&mut self.render.visibility_filter, "Filtro de visibilidade");
         ui.checkbox(&mut self.show_control_points, "Pontos de controle");
         if self.render.shader_type != old_shader || self.render.visibility_filter != old_visibility_filter {
@@ -264,8 +305,19 @@ impl App {
         }
 
         ui.separator();
-
         ui.heading("Objetos");
+
+        if ui.button("Criar novo objeto").clicked() {
+            if self.parse_object_props() {
+                let mut new_object = Object::new(self.ni_value, self.nj_value, self.resi_value, self.resj_value, self.smoothness_value, self.ka_value, self.kd_value, self.ks_value, self.n_value, self.cylinder);
+                new_object.scale(100.0);
+                self.objects.push(new_object);
+                self.selected_object = Some(self.objects.len() - 1);
+                redraw = true;
+            }
+        }
+        ui.checkbox(&mut self.cylinder, "Criar objeto fechado");
+
         ui.collapsing("Pontos de controle", |ui| {
             ui.add(TextEdit::singleline(&mut self.ni)
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
@@ -333,25 +385,9 @@ impl App {
                 }
             }
         });
-        if ui.button("Criar novo objeto").clicked() {
-            if self.parse_object_props() {
-                let mut new_object = Object::new(self.ni_value, self.nj_value, self.resi_value, self.resj_value, self.smoothness_value, self.ka_value, self.kd_value, self.ks_value, self.n_value, self.cylinder);
-                new_object.scale(100.0);
-                self.objects.push(new_object);
-                self.selected_object = Some(self.objects.len() - 1);
-                redraw = true;
-            }
-        }
-        ui.checkbox(&mut self.cylinder, "Criar objeto fechado");
-        if ui.button("Limpar objetos").clicked() {
-            self.objects.clear();
-            self.selected_object = None;
-            redraw = true;
-        }
-        if ui.button("Limpar seleção").clicked() {
-            self.selected_object = None;
-        }
-        ui.label("Objetos:");
+
+        ui.separator();
+        ui.heading(" Lista de Objetos");
         if self.objects.is_empty() {
             ui.label("Nenhum objeto criado");
         }
@@ -360,6 +396,16 @@ impl App {
                 self.selected_object = Some(i);
             }
         }
+        
+        if ui.button("Limpar seleção").clicked() {
+            self.selected_object = None;
+        }
+        if ui.button("Limpar objetos").clicked() {
+            self.objects.clear();
+            self.selected_object = None;
+            redraw = true;
+        }
+
         if ui.button("Remover objeto selecionado").clicked() {
             if let Some(idx) = self.selected_object {
                 self.objects.remove(idx);
@@ -369,14 +415,12 @@ impl App {
         }
 
         ui.separator();
-
         ui.heading("Iluminação");
         vector_input(ui, "L (posição da lâmpada)", &mut self.l, &mut self.render.light.l, &mut redraw);
         color_input(ui, "IL (cor da lâmpada)", &mut self.il, &mut self.render.light.il, &mut redraw);
         color_input(ui, "ILA (cor da luz ambiente)", &mut self.ila, &mut self.render.light.ila, &mut redraw);
 
         ui.separator();
-
         ui.heading("Câmera");
         ui.collapsing("VRP (posição da câmera)", |ui| {
             ui.add(TextEdit::singleline(&mut self.vrp.x)
@@ -425,7 +469,6 @@ impl App {
         });
 
         ui.separator();
-
         ui.heading("Transformações");
         if let Some(idx) = self.selected_object {
             ui.collapsing("Translação Manual", |ui| {
