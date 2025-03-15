@@ -1,7 +1,9 @@
 use rand::Rng;
 use serde::{Serialize, Deserialize};
+use std::sync::Arc;
 use crate::constants::*;
 use crate::types::*;
+use rayon::prelude::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Face {
@@ -167,14 +169,21 @@ impl Object {
     fn gen_control_points(ni: usize, nj: usize, smoothing_iterations: u8) -> Vec<Vec3> {
         let mut rng = rand::thread_rng();
         let mut control_points: Vec<Vec3> = Vec::with_capacity((ni + 1) * (nj + 1));
-        for i in 0..=ni {
-            for j in 0..=nj {
+        let ti = 4.0 / ni as f32;
+        let tj = 4.0 / nj as f32;
+        let mut i = 0.0;
+        let mut j = 0.0;
+        for _ in 0..=ni {
+            j = 0.0;
+            for _ in 0..=nj {
                 control_points.push(Vec3::new(
-                    i as f32,
-                    j as f32,
+                    i,
+                    j,
                     rng.gen_range(0.0..2.0),
                 ));
+                j += tj;
             }
+            i += ti;
         }
         Self::smooth_control_points(&mut control_points, smoothing_iterations, ni, nj);
         control_points
@@ -183,8 +192,8 @@ impl Object {
     /// Renomeada para representar objeto fechado
     fn gen_closed_control_points(ni: usize, nj: usize) -> Vec<Vec3> {
         let mut control_points: Vec<Vec3> = Vec::with_capacity((ni + 1) * (nj + 1));
-        let step_i = -2.0 * std::f32::consts::PI / (ni + 1)  as f32;
-        let step_j = 1.0 / nj as f32;
+        let step_i = -8.0 * std::f32::consts::PI / (ni + 1)  as f32;
+        let step_j = 4.0 / nj as f32;
         for i in 0..=ni {
             for j in 0..=nj {
                 let x = i as f32 * step_i;
@@ -231,6 +240,24 @@ impl Object {
         }
     }
 
+    fn compute_basis(knots: &[f32], n: usize, res: usize, t: usize) -> Vec<f32> {
+        let mut basis = vec![0.0; (n + 1) * res];
+        let increment = (n as f32 + 2.0 - t as f32) / ((res - 1) as f32);
+        let epsilon = 1e-6;
+        for i in 0..res {
+            let raw_u = i as f32 * increment;
+            let u = if raw_u < knots[knots.len() - 1] {
+                raw_u
+            } else {
+                knots[knots.len() - 1] - epsilon
+            };
+            for k in 0..=n {
+                basis[k * res + i] = Self::spline_blend(k, t, knots, u);
+            }
+        }
+        basis
+    }
+
     /// Gera a malha da superfície.
     pub fn calc_mesh(&mut self) {
         let ni = self.ni;
@@ -238,46 +265,36 @@ impl Object {
         let resi = self.resi;
         let resj = self.resj;
 
-        let epsilon = 1e-6;
+        // 1) Pré-computar as funções de base para as duas direções
+        let basis_i = Self::compute_basis(&self.knots_i, ni, resi, TI);
+        let basis_j = Self::compute_basis(&self.knots_j, nj, resj, TJ);
 
-        let incr_i = (ni as f32 + 2.0 - TI as f32) / (resi as f32 - 1.0);
-        let incr_j = (nj as f32 + 2.0 - TJ as f32) / (resj as f32 - 1.0);
-        let knots_i = &self.knots_i;
-        let knots_j = &self.knots_j;
-
-        let mut new_vertices = vec![Vec3::zeros(); resi * resj];
-
-        let mut interval_i = 0.0;
-        for i in 0..resi {
-            let param_i = if interval_i < *knots_i.last().unwrap() {
-                interval_i
-            } else {
-                knots_i.last().unwrap() - epsilon
-            };
-
-            let mut interval_j = 0.0;
-            for j in 0..resj {
-                let param_j = if interval_j < *knots_j.last().unwrap() {
-                    interval_j
-                } else {
-                    knots_j.last().unwrap() - epsilon
-                };
-
-                let mut sum = Vec3::zeros();
-                for ki in 0..=ni {
-                    for kj in 0..=nj {
-                        let bi = Self::spline_blend(ki, TI, knots_i, param_i);
-                        let bj = Self::spline_blend(kj, TJ, knots_j, param_j);
-                        let blend = bi * bj;
-                        let cp_idx = ki * (nj + 1) + kj;
-                        sum = sum + (self.control_points[cp_idx] * blend);
+        // 2) Calcular os vértices em paralelo usando Rayon
+        let cps = self.control_points.clone();
+        let new_vertices: Vec<Vec3> = (0..resi)
+            .into_par_iter()
+            .flat_map_iter(|i| {
+                // Clonar as variáveis para uso no iterador interno
+                let basis_i_c = basis_i.clone();
+                let basis_j_c = basis_j.clone();
+                let cps_c = cps.clone();
+                (0..resj).map(move |j| {
+                    let mut sum = Vec3::zeros();
+                    for ki in 0..=ni {
+                        let bi = basis_i_c[ki * resi + i];
+                        for kj in 0..=nj {
+                            let bj = basis_j_c[kj * resj + j];
+                            let blend = bi * bj;
+                            let cp_idx = ki * (nj + 1) + kj;
+                            sum = sum + (cps_c[cp_idx] * blend);
+                        }
                     }
-                }
-                new_vertices[i * resj + j] = sum;
-                interval_j += incr_j;
-            }
-            interval_i += incr_i;
-        }
+                    sum
+                })
+            })
+            .collect();
+
+        // 3) Atribuir os vértices calculados
         self.vertices = new_vertices;
     }
 
