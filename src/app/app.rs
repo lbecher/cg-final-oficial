@@ -275,9 +275,7 @@ impl App {
         ui.radio_value(&mut self.theme, Theme::Light, "Claro");
         ui.radio_value(&mut self.theme, Theme::Dark, "Escuro");
 
-        ui.separator();
-
-        ui.heading("Dimensões da Viewport");
+        /*ui.heading("Dimensões da Viewport");
         ui.horizontal(|ui| {
             ui.label("Largura:");
             ui.add(TextEdit::singleline(&mut self.viewport_width)
@@ -293,7 +291,7 @@ impl App {
                parse_input("Altura:", &mut self.viewport_height_value, &mut self.viewport_height) {
                 redraw = true;
             }
-        }
+        }*/
 
         ui.separator();
 
@@ -658,6 +656,7 @@ impl App {
                     let point_response = ui.interact(point_rect, point_id, Sense::drag());
 
                     if point_response.dragged() {
+                        //deslocamento do mouse
                         let drag_delta: Vec2 = point_response.drag_delta();
                         let drag_delta_sru: Mat4x1 = m_srt_sru * Mat4x1::new(drag_delta.x, -drag_delta.y, 0.0, 0.0);
                         control_points[i] += mat4x1_to_vec3(&drag_delta_sru);
