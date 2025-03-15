@@ -731,16 +731,7 @@ impl Render {
 
         let vertices_srt = self.calc_srt_convertions(&object.vertices);
 
-        let mut faces = object.faces.clone();
-        faces.sort_by(|a, b| {
-            let a_depth = a.vertices.iter().map(|&i| vertices_srt[i].z).sum::<f32>() / a.vertices.len() as f32;
-            let b_depth = b.vertices.iter().map(|&i| vertices_srt[i].z).sum::<f32>() / b.vertices.len() as f32;
-            let a_depth = OrderedFloat(a_depth);
-            let b_depth = OrderedFloat(b_depth);
-            a_depth.cmp(&b_depth)
-        });
-
-        for face in faces.iter_mut() {
+        for face in object.faces.iter_mut() {
             if self.visibility_filter && !face.visible {
                 continue;
             }
@@ -811,15 +802,6 @@ impl Render {
 
         let vertices_srt = self.calc_srt_convertions(&object.vertices);
 
-        let mut faces = object.faces.clone();
-        faces.sort_by(|a, b| {
-            let a_depth = a.vertices.iter().map(|&i| vertices_srt[i].z).sum::<f32>() / a.vertices.len() as f32;
-            let b_depth = b.vertices.iter().map(|&i| vertices_srt[i].z).sum::<f32>() / b.vertices.len() as f32;
-            let a_depth = OrderedFloat(a_depth);
-            let b_depth = OrderedFloat(b_depth);
-            a_depth.cmp(&b_depth)
-        });
-
         let mut vertex_intensities = vec![Vec3::zeros(); object.vertices.len()];
         for (i, vertex) in object.vertices.iter().enumerate() {
             let mut normal = Vec3::zeros();
@@ -840,7 +822,7 @@ impl Render {
             vertex_intensities[i] = Vec3::new(color[0] as f32, color[1] as f32, color[2] as f32);
         }
 
-        for face in &mut object.faces {
+        for face in object.faces.iter_mut() {
             if self.visibility_filter && !face.visible {
                 continue;
             }
@@ -930,16 +912,6 @@ impl Render {
 
         let vertices_srt = self.calc_srt_convertions(&object.vertices);
 
-        let mut faces = object.faces.clone();
-        faces.sort_by(|a, b| {
-            let a_depth = a.vertices.iter().map(|&i| vertices_srt[i].z).sum::<f32>() / a.vertices.len() as f32;
-            let b_depth = b.vertices.iter().map(|&i| vertices_srt[i].z).sum::<f32>() / b.vertices.len() as f32;
-            let a_depth = OrderedFloat(a_depth);
-            let b_depth = OrderedFloat(b_depth);
-            a_depth.cmp(&b_depth)
-        });
-
-
         let mut vertex_normals: Vec<Vec3> = Vec::new();
         for i in 0..object.vertices.len() {
             let mut normal = Vec3::zeros();
@@ -951,7 +923,7 @@ impl Render {
             vertex_normals.push(normal.normalize());
         }
 
-        for face in faces.iter_mut() {
+        for face in object.faces.iter_mut() {
             if self.visibility_filter && !face.visible {
                 continue;
             }
