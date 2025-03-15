@@ -77,9 +77,9 @@ impl Default for Render {
             vmax: GUI_VIEWPORT_HEIGHT - 1.0,
         };
         let light = Light {
-            l: Vec3::new(300.0, 0.0, 0.0),
-            il: Vec3::new(0.0, 200.0, 0.0),
-            ila: Vec3::new(100.0, 0.0, 0.0),
+            l: Vec3::new(500.0, 0.0, 2000.0),
+            il: Vec3::new(0.0, 0.0, 255.0),
+            ila: Vec3::new(125.0, 0.0, 0.0),
         };
 
         let m_sru_srt = Mat4::identity();
@@ -550,10 +550,10 @@ impl Render {
     ) -> [u8; 4] {
         let mut it: Vec3 = Vec3::zeros();
 
-        let ln: Vec3 = (self.light.l - *position).normalize();
+        let ln: Vec3 = (self.light.l - position).normalize();
         let id_dot = nn.dot(&ln);
 
-        let sn: Vec3 = (self.camera.vrp - *position).normalize();
+        let sn: Vec3 = (self.camera.vrp - position).normalize();
         let r: Vec3 = 2.0 * id_dot * sn - ln;
         let is_dot = r.dot(&sn);
 
@@ -593,10 +593,10 @@ impl Render {
     ) -> [u8; 4] {
         let mut it: Vec3 = Vec3::zeros();
 
-        let ln: Vec3 = (self.light.l - *position).normalize();
+        let ln: Vec3 = (self.light.l - position).normalize();
         let id_dot = nn.dot(&ln);
 
-        let sn: Vec3 = (self.camera.vrp - *position).normalize();
+        let sn: Vec3 = (self.camera.vrp - position).normalize();
         let hn: Vec3 = (ln + sn).normalize();
         let is_dot = nn.dot(&hn);
 
@@ -970,11 +970,13 @@ impl Render {
                         }
 
                         if self.can_paint(*i, j, z) {
-                            let pixel: Vec3 = Vec3::new(j as f32, *i as f32, z);
-                            let position: Vec3 = (self.m_srt_sru * vec3_to_mat4x1(&pixel)).xyz();
+                            //let pixel: Vec3 = Vec3::new(j as f32, *i as f32, z);
+                            //let pixel_sru: Mat4x1 = self.m_srt_sru * vec3_to_mat4x1(&pixel);
+
+                            //let position: Vec3 = mat4x1_to_vec3(&pixel_sru);
                             let nn: Vec3 = n.normalize();
 
-                            let color = self.calc_color_for_phong(&ka, &kd, &ks, &object.n, &nn, &position);
+                            let color = self.calc_color_for_phong(&ka, &kd, &ks, &object.n, &nn, &object.centroid);
                             self.paint(*i as i32, j as i32, color);
                             self.set_zbuffer(*i, j, z);
                         }

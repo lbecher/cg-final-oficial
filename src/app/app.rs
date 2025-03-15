@@ -79,10 +79,10 @@ impl Default for App {
         let objects = Vec::new();
         let selected_object = None;
 
-        let ka_value: Vec3 = Vec3::new(0.4, 0.4, 0.8);
-        let kd_value: Vec3 = Vec3::new(0.7, 0.9, 0.4);
-        let ks_value: Vec3 = Vec3::new(0.5, 0.1, 0.9);
-        let n_value: f32 = 2.0;
+        let ka_value: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+        let kd_value: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+        let ks_value: Vec3 = Vec3::new(0.0, 0.0, 1.0);
+        let n_value: f32 = 6.0;
         let ka = ColorInputData::new(ka_value.x, ka_value.y, ka_value.z);
         let kd = ColorInputData::new(kd_value.x, kd_value.y, kd_value.z);
         let ks = ColorInputData::new(ks_value.x, ks_value.y, ks_value.z);
