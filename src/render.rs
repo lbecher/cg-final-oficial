@@ -185,7 +185,7 @@ impl Render {
     }
 
     /// Converte coordenadas SRT para do buffer de imagem.
-    #[inline(always)]
+    /*#[inline(always)]
     fn srt_to_buffer(
         &self,
         i: i32,
@@ -198,7 +198,7 @@ impl Render {
         let x = (nj * (self.buffer_width as f32 - 1.0)).round() as i32;
 
         (y, x)
-    }
+    }*/
 
     /// Seta um Z no ZBuffer.
     #[inline(always)]
@@ -208,10 +208,11 @@ impl Render {
         j: i32,
         z: f32,
     ) {
-        let (y, x) = self.srt_to_buffer(i, j);
-        let x = x as usize;
-        let y = y as usize;
-        let index = y * self.buffer_width + x;
+       //let (y, x) = self.srt_to_buffer(i, j);
+        let j: usize = j as usize;
+        let i: usize = i as usize;
+        
+        let index = i * self.buffer_width + j;
         self.zbuffer[index] = z;
     }
 
@@ -223,10 +224,10 @@ impl Render {
         j: i32,
         z: f32,
     ) -> bool {
-        let (y, x) = self.srt_to_buffer(i, j);
-        let x = x as usize;
-        let y = y as usize;
-        let index = y * self.buffer_width + x;
+        //let (y, x) = self.srt_to_buffer(i, j);
+        let j = j as usize;
+        let i = i as usize;
+        let index = i * self.buffer_width + j;
         z > self.zbuffer[index]
     }
 
@@ -238,15 +239,15 @@ impl Render {
         j: i32,
         color: [u8; 4],
     ) {
-        let (y, x) = self.srt_to_buffer(i, j);
-        let x = x as usize;
-        let y = y as usize;
+        //let (y, x) = self.srt_to_buffer(i, j);
+        let j = j as usize;
+        let i = i as usize;
 
         //if (x >= self.buffer_width) || (y >= self.buffer_height) {
         //    return;
         //}
 
-        let index = (y * self.buffer_width + x) * 4;
+        let index = (i * self.buffer_width + j) * 4;
         self.buffer[index]     = color[0];
         self.buffer[index + 1] = color[1];
         self.buffer[index + 2] = color[2];
@@ -645,13 +646,13 @@ impl Render {
                 self.render_wireframe(object, primary_edge_color, secondary_edge_color);
             }
             ShaderType::Flat => {
-                self.render_flat(object);
+                self.render_flat(object, primary_edge_color, secondary_edge_color);
             }
             ShaderType::Gouraud => {
-                self.render_gouraud(object);
+                self.render_gouraud(object, primary_edge_color, secondary_edge_color);
             }
             ShaderType::Phong => {
-                self.render_phong(object);
+                self.render_phong(object, primary_edge_color, secondary_edge_color);
             }
         }
     }
@@ -730,6 +731,8 @@ impl Render {
     fn render_flat(
         &mut self,
         object: &mut Object,
+        primary_edge_color: [u8; 4],
+        secondary_edge_color: [u8; 4],
     ) {
         self.update_faces(object);
 
@@ -803,6 +806,8 @@ impl Render {
     fn render_gouraud(
         &mut self,
         object: &mut Object,
+        primary_edge_color: [u8; 4],
+        secondary_edge_color: [u8; 4],
     ) {
         self.update_faces(object);
 
@@ -913,6 +918,8 @@ impl Render {
     fn render_phong(
         &mut self,
         object: &mut Object,
+        primary_edge_color: [u8; 4],
+        secondary_edge_color: [u8; 4],
     ) {
         self.update_faces(object);
 
