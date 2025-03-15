@@ -66,6 +66,11 @@ pub struct App {
 
     cylinder: bool,
     show_info: bool,
+
+    viewport_width: String,
+    viewport_width_value: usize,
+    viewport_height: String,
+    viewport_height_value: usize,
 }
 
 impl Default for App {
@@ -99,6 +104,11 @@ impl Default for App {
         let resj = format!("RESJ: {}", resj_value);
         let smoothness = format!("Passos: {}", smoothness_value);
         let show_info = false;
+
+        let viewport_width_value = GUI_VIEWPORT_WIDTH as usize;
+        let viewport_height_value = GUI_VIEWPORT_HEIGHT as usize;
+        let viewport_width = format!("{}", viewport_width_value);
+        let viewport_height = format!("{}", viewport_height_value);
 
         let mut obj = Self {
             objects,
@@ -152,6 +162,11 @@ impl Default for App {
 
             show_control_points: true,
             cylinder: false,
+
+            viewport_width,
+            viewport_width_value,
+            viewport_height,
+            viewport_height_value,
         };
 
         obj.redraw();
@@ -265,10 +280,20 @@ impl App {
         ui.heading("Dimensões da Viewport");
         ui.horizontal(|ui| {
             ui.label("Largura:");
+            ui.add(TextEdit::singleline(&mut self.viewport_width)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
         });
         ui.horizontal(|ui| {
             ui.label("Altura:");
+            ui.add(TextEdit::singleline(&mut self.viewport_height)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
         });
+        if ui.button("Aplicar Dimensões").clicked() {
+            if parse_input("Largura:", &mut self.viewport_width_value, &mut self.viewport_width) &&
+               parse_input("Altura:", &mut self.viewport_height_value, &mut self.viewport_height) {
+                redraw = true;
+            }
+        }
 
         ui.separator();
 
@@ -596,7 +621,7 @@ impl App {
 
     pub fn central_panel_content(&mut self, ui: &mut Ui) {
         let (response, painter) =
-            ui.allocate_painter(Vec2::new(GUI_VIEWPORT_WIDTH, GUI_VIEWPORT_HEIGHT), Sense::hover());
+            ui.allocate_painter(Vec2::new(self.viewport_width_value as f32, self.viewport_height_value as f32), Sense::hover());
         let to_screen = emath::RectTransform::from_to(
             Rect::from_min_size(Pos2::ZERO, response.rect.size()),
             response.rect,
