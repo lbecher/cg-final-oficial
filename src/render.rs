@@ -544,22 +544,18 @@ impl Render {
         ka: &Vec3,
         kd: &Vec3,
         ks: &Vec3,
-
-        // O ponto em que a iluminação será calculada
-        // Constante -> Centroide da face
-        // Gouraud -> Um vértice da face
-        // Phong -> Um pixel da face
+        n: &f32,
+        nn: &Vec3,
         position: &Vec3,
-        direction: &Vec3,
-        normal: &Vec3,
-        n: f32,
     ) -> [u8; 4] {
         let mut it: Vec3 = Vec3::zeros();
 
-        let ln: Vec3 = (self.light.l - position).normalize();
-        let id_dot = normal.dot(&ln);
-        let r: Vec3 = 2.0 * id_dot * normal - ln;
-        let is_dot = r.dot(direction);
+        let ln: Vec3 = (self.light.l - *position).normalize();
+        let id_dot = nn.dot(&ln);
+
+        let sn: Vec3 = (self.camera.vrp - *position).normalize();
+        let r: Vec3 = 2.0 * id_dot * sn - ln;
+        let is_dot = r.dot(&sn);
 
         for i in 0..3 {
             let ia = self.light.ila[i] * ka[i];
@@ -570,7 +566,7 @@ impl Render {
                 it[i] += id;
 
                 if is_dot > 0.0 {
-                    let is = self.light.il[i] * ks[i] * is_dot.powf(n);
+                    let is = self.light.il[i] * ks[i] * is_dot.powf(*n);
                     it[i] += is;
                 };
             }
@@ -591,15 +587,16 @@ impl Render {
         ka: &Vec3,
         kd: &Vec3,
         ks: &Vec3,
-        position: &Vec3,
-        sn: &Vec3,
+        n: &f32,
         nn: &Vec3,
-        n: f32,
+        position: &Vec3,
     ) -> [u8; 4] {
         let mut it: Vec3 = Vec3::zeros();
 
-        let ln: Vec3 = (self.light.l - position).normalize();
+        let ln: Vec3 = (self.light.l - *position).normalize();
         let id_dot = nn.dot(&ln);
+
+        let sn: Vec3 = (self.camera.vrp - *position).normalize();
         let hn: Vec3 = (ln + sn).normalize();
         let is_dot = nn.dot(&hn);
 
@@ -612,7 +609,7 @@ impl Render {
                 it[i] += id;
 
                 if is_dot > 0.0 {
-                    let is = self.light.il[i] * ks[i] * is_dot.powf(n);
+                    let is = self.light.il[i] * ks[i] * is_dot.powf(*n);
                     it[i] += is;
                 };
             }
@@ -730,6 +727,7 @@ impl Render {
         let ka: Vec3 = object.ka;
         let kd: Vec3 = object.kd;
         let ks: Vec3 = object.ks;
+        let n: f32 = object.n;
 
         let vertices_srt = self.calc_srt_convertions(&object.vertices);
 
@@ -747,8 +745,7 @@ impl Render {
                 continue;
             }
 
-            let direction: Vec3 = (self.camera.vrp - face.centroid).normalize();
-            let color = self.calc_color(&ka, &kd, &ks, &face.centroid, &direction, &face.normal, object.n);
+            let color = self.calc_color(&ka, &kd, &ks, &n, &face.normal, &face.centroid);
 
             let intersections = Self::calc_intersections(&vertices_srt, face);
 
@@ -810,6 +807,7 @@ impl Render {
         let ka: Vec3 = object.ka;
         let kd: Vec3 = object.kd;
         let ks: Vec3 = object.ks;
+        let n: f32 = object.n;
 
         let vertices_srt = self.calc_srt_convertions(&object.vertices);
 
@@ -838,8 +836,7 @@ impl Render {
                 normal = normal.normalize();
             }
 
-            let direction = (self.camera.vrp - *vertex).normalize();
-            let color = self.calc_color(&ka, &kd, &ks, vertex, &direction, &normal, object.n);
+            let color = self.calc_color(&ka, &kd, &ks, &n, &normal, vertex);
             vertex_intensities[i] = Vec3::new(color[0] as f32, color[1] as f32, color[2] as f32);
         }
 
@@ -1001,11 +998,11 @@ impl Render {
                         }
 
                         if self.can_paint(*i, j, z) {
-                            let position: Vec3 = object.centroid;
-                            let sn: Vec3 = (self.camera.vrp - object.centroid).normalize();
+                            let pixel: Vec3 = Vec3::new(j as f32, *i as f32, z);
+                            let position: Vec3 = (self.m_srt_sru * vec3_to_mat4x1(&pixel)).xyz();
                             let nn: Vec3 = n.normalize();
 
-                            let color = self.calc_color_for_phong(&ka, &kd, &ks, &position, &sn, &nn, object.n);
+                            let color = self.calc_color_for_phong(&ka, &kd, &ks, &object.n, &nn, &position);
                             self.paint(*i as i32, j as i32, color);
                             self.set_zbuffer(*i, j, z);
                         }
