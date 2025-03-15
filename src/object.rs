@@ -16,12 +16,12 @@ pub struct Face {
 impl Face {
     /// Calcula a normal da face.
     pub fn calc_normal(&mut self, vertices: &Vec<Vec3>) {
-        let a = vertices[self.vertices[0]];
-        let b = vertices[self.vertices[1]];
-        let c = vertices[self.vertices[2]];
+        let a: Vec3 = vertices[self.vertices[0]];
+        let b: Vec3 = vertices[self.vertices[1]];
+        let c: Vec3 = vertices[self.vertices[2]];
 
-        let bc = c - b;
-        let ba = a - c;
+        let bc: Vec3 = c - b;
+        let ba: Vec3 = a - b;
 
         self.normal = bc.cross(&ba).normalize();
     }
@@ -35,10 +35,10 @@ impl Face {
     /// Calcula o centroide da face.
     pub fn calc_centroid(&mut self, vertices: &Vec<Vec3>) {
         let mut centroid = Vec3::zeros();
-        for i in 0..3 {
+        for i in 0..self.vertices.len() {
             centroid = centroid + vertices[self.vertices[i]];
         }
-        self.centroid = centroid / 3.0
+        self.centroid = centroid / self.vertices.len() as f32;
     }
 }
 
@@ -72,6 +72,8 @@ pub struct Object {
     pub kd: Vec3,
     pub ks: Vec3,
     pub n: f32,
+    // Campo renomeado para indicar objeto fechado
+    pub closed: bool,
 }
 
 impl Object {
@@ -85,12 +87,12 @@ impl Object {
         kd: Vec3,
         ks: Vec3,
         n: f32,
-        cylinder: bool,
+        closed: bool, // parâmetro renomeado
     ) -> Self {
-        let control_points: Vec<Vec3> = if !cylinder {
+        let control_points: Vec<Vec3> = if !closed {
             Self::gen_control_points(ni, nj, smoothing_iterations)
         } else {
-            Self::gen_cylinder_control_point(ni, nj)
+            Self::gen_closed_control_points(ni, nj) // função renomeada
         };
 
         let knots_i: Vec<f32> = Self::spline_knots(ni, TI);
@@ -117,6 +119,7 @@ impl Object {
             kd,
             ks,
             n,
+            closed, // inicializa o campo
         };
 
         obj.calc_mesh();
@@ -177,10 +180,10 @@ impl Object {
         control_points
     }
 
-    /// gerar pontos de controle para um cilindro
-    fn gen_cylinder_control_point(ni: usize, nj: usize) -> Vec<Vec3> {
+    /// Renomeada para representar objeto fechado
+    fn gen_closed_control_points(ni: usize, nj: usize) -> Vec<Vec3> {
         let mut control_points: Vec<Vec3> = Vec::with_capacity((ni + 1) * (nj + 1));
-        let step_i = 2.0 * std::f32::consts::PI / (ni + 1)  as f32;
+        let step_i = -2.0 * std::f32::consts::PI / (ni + 1)  as f32;
         let step_j = 1.0 / nj as f32;
         for i in 0..=ni {
             for j in 0..=nj {
@@ -253,105 +256,57 @@ impl Object {
         let resi = self.resi;
         let resj = self.resj;
 
-        // 1) Pré-computar as funções de base para as duas direções
-        let basis_i = Self::compute_basis(&self.knots_i, ni, resi, TI);
-        let basis_j = Self::compute_basis(&self.knots_j, nj, resj, TJ);
+        let epsilon = 1e-6;
 
-        // 2) Alocar o vetor final (vazio) onde colocaremos todos os vértices
+        let incr_i = (ni as f32 + 2.0 - TI as f32) / (resi as f32 - 1.0);
+        let incr_j = (nj as f32 + 2.0 - TJ as f32) / (resj as f32 - 1.0);
+        let knots_i = &self.knots_i;
+        let knots_j = &self.knots_j;
+
         let mut new_vertices = vec![Vec3::zeros(); resi * resj];
 
-        // 3) Calcular quantas threads e dividir linhas em blocos
-        let n_threads = crate::utils::num_cpu_threads();
-        let chunk_size = resi / n_threads;
-        let remainder = resi % n_threads;
-
-        // Clonar para passar às threads
-        let basis_i_arc = Arc::new(basis_i);
-        let basis_j_arc = Arc::new(basis_j);
-        let cps_arc = Arc::new(self.control_points.clone());
-
-        let mut handles = Vec::with_capacity(n_threads);
-        let mut ranges = Vec::with_capacity(n_threads);
-
-        // Vamos determinar o intervalo de linhas [start_i..end_i) que cada thread processa
-        let mut current_i = 0;
-        for thread_id in 0..n_threads {
-            // Quantas linhas esta thread vai pegar
-            let lines_in_this_chunk = chunk_size + if thread_id < remainder { 1 } else { 0 };
-            let start_i = current_i;
-            let end_i = start_i + lines_in_this_chunk;
-            current_i = end_i;
-
-            // Clonamos as referências (Arc) para usar dentro da thread
-            let basis_i_ref = Arc::clone(&basis_i_arc);
-            let basis_j_ref = Arc::clone(&basis_j_arc);
-            let cps_ref = Arc::clone(&cps_arc);
-
-            // Criamos a thread
-            let handle = std::thread::spawn(move || {
-                // Aloca vetor parcial para as (lines_in_this_chunk * resj) posições
-                let mut partial = vec![Vec3::zeros(); lines_in_this_chunk * resj];
-
-                // Para cada linha local
-                for local_i in 0..lines_in_this_chunk {
-                    // i = linha global, mas relativo ao start_i deste chunk
-                    let i = start_i + local_i;
-
-                    for j in 0..resj {
-                        let mut sum = Vec3::zeros();
-
-                        // Recupera funções de base pré-calculadas:
-                        //   bi = basis_i_ref[ki * resi + i]
-                        //   bj = basis_j_ref[kj * resj + j]
-                        // e soma contribuições dos pontos de controle
-                        for ki in 0..=ni {
-                            let bi = basis_i_ref[ki * resi + i];
-                            for kj in 0..=nj {
-                                let bj = basis_j_ref[kj * resj + j];
-                                let blend = bi * bj;
-
-                                let cp_idx = ki * (nj + 1) + kj;
-                                sum = sum + (cps_ref[cp_idx] * blend);
-                            }
-                        }
-
-                        partial[local_i * resj + j] = sum;
+        let mut interval_i = 0.0;
+        for i in 0..resi {
+            let param_i = if interval_i < *knots_i.last().unwrap() {
+                interval_i
+            } else {
+                knots_i.last().unwrap() - epsilon
+            };
+    
+            let mut interval_j = 0.0;
+            for j in 0..resj {
+                let param_j = if interval_j < *knots_j.last().unwrap() {
+                    interval_j
+                } else {
+                    knots_j.last().unwrap() - epsilon
+                };
+    
+                let mut sum = Vec3::zeros();
+                for ki in 0..=ni {
+                    for kj in 0..=nj {
+                        let bi = Self::spline_blend(ki, TI, knots_i, param_i);
+                        let bj = Self::spline_blend(kj, TJ, knots_j, param_j);
+                        let blend = bi * bj;
+                        let cp_idx = ki * (nj + 1) + kj;
+                        sum = sum + (self.control_points[cp_idx] * blend);
                     }
                 }
-
-                partial // Retorna o vetor parcial ao final
-            });
-
-            // Guardamos o handle da thread e o intervalo que ela processou
-            handles.push(handle);
-            ranges.push((start_i, end_i));
-        }
-
-        // 4) Juntamos todos os pedaços no vetor final `new_vertices`
-        for (handle, (start_i, end_i)) in handles.into_iter().zip(ranges.into_iter()) {
-            // Esperamos a thread terminar e recuperar o vetor parcial
-            let partial = handle.join().unwrap();
-
-            // Copia `partial` na posição certa de `new_vertices`
-            // Cada `local_i` corresponde a i global = start_i + local_i
-            // Tamanho de partial = (end_i - start_i) * resj
-            let mut offset = start_i * resj;
-            for vtx in partial {
-                new_vertices[offset] = vtx;
-                offset += 1;
+                new_vertices[i * resj + j] = sum;
+                interval_j += incr_j;
             }
+            interval_i += incr_i;
         }
-
-        // 5) Finalmente, atribuir ao self.vertices
         self.vertices = new_vertices;
     }
 
     /// Gera as faces triangulares da malha.
     fn calc_edges_and_faces_tri(&mut self) {
-        for i in 0..self.resi - 1 {
+        let i_max = if self.closed { self.resi } else { self.resi - 1 };
+        for i in 0..i_max {
+            let next_i = if self.closed { (i + 1) % self.resi } else { i + 1 };
             for j in 0..self.resj - 1 {
-                let a_index = (i + 1) * self.resj + j;
-                let b_index = (i + 1) * self.resj + (j + 1);
+                let a_index = next_i * self.resj + j;
+                let b_index = next_i * self.resj + (j + 1);
                 let c_index = i * self.resj + (j + 1);
                 let d_index = i * self.resj + j;
 
@@ -377,10 +332,12 @@ impl Object {
     }
 
     fn calc_edges_and_faces_quad(&mut self) {
-        for i in 0..self.resi - 1 {
+        let i_max = if self.closed { self.resi } else { self.resi - 1 };
+        for i in 0..i_max {
+            let next_i = if self.closed { (i + 1) % self.resi } else { i + 1 };
             for j in 0..self.resj - 1 {
-                let a_index = (i + 1) * self.resj + j;
-                let b_index = (i + 1) * self.resj + (j + 1);
+                let a_index = next_i * self.resj + j;
+                let b_index = next_i * self.resj + (j + 1);
                 let c_index = i * self.resj + (j + 1);
                 let d_index = i * self.resj + j;
 
@@ -394,6 +351,7 @@ impl Object {
                 self.faces.push(face);
             }
         }
+        // Removida abordagem de criação de faces extras; o fechamento é tratado pelo wrap modular.
     }
 
     // Novo método para gerar arestas e faces com base na flag use_triangular_faces
