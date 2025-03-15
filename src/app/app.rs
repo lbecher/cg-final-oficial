@@ -329,6 +329,7 @@ impl App {
                 if ui.button("Modificar objeto selecionado").clicked() {
                     if self.parse_ni_nj_smoothness() {
                         self.objects[idx].set_ni_nj(self.ni_value, self.nj_value, self.smoothness_value);
+                        self.objects[idx].scale(100.0);
                         redraw = true;
                     }
                 }

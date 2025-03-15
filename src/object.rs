@@ -1,6 +1,5 @@
 use rand::Rng;
 use serde::{Serialize, Deserialize};
-use std::sync::Arc;
 use crate::constants::*;
 use crate::types::*;
 
@@ -72,7 +71,7 @@ pub struct Object {
     pub kd: Vec3,
     pub ks: Vec3,
     pub n: f32,
-    // Campo renomeado para indicar objeto fechado
+
     pub closed: bool,
 }
 
@@ -87,12 +86,12 @@ impl Object {
         kd: Vec3,
         ks: Vec3,
         n: f32,
-        closed: bool, // parâmetro renomeado
+        closed: bool,
     ) -> Self {
         let control_points: Vec<Vec3> = if !closed {
             Self::gen_control_points(ni, nj, smoothing_iterations)
         } else {
-            Self::gen_closed_control_points(ni, nj) // função renomeada
+            Self::gen_closed_control_points(ni, nj)
         };
 
         let knots_i: Vec<f32> = Self::spline_knots(ni, TI);
@@ -119,7 +118,8 @@ impl Object {
             kd,
             ks,
             n,
-            closed, // inicializa o campo
+
+            closed,
         };
 
         obj.calc_mesh();
@@ -231,24 +231,6 @@ impl Object {
         }
     }
 
-    fn compute_basis(knots: &[f32], n: usize, res: usize, t: usize) -> Vec<f32> {
-        let mut basis = vec![0.0; (n + 1) * res];
-        let increment = (n as f32 + 2.0 - t as f32) / ((res - 1) as f32);
-        let epsilon = 1e-6;
-        for i in 0..res {
-            let raw_u = i as f32 * increment;
-            let u = if raw_u < knots[knots.len() - 1] {
-                raw_u
-            } else {
-                knots[knots.len() - 1] - epsilon
-            };
-            for k in 0..=n {
-                basis[k * res + i] = Self::spline_blend(k, t, knots, u);
-            }
-        }
-        basis
-    }
-
     /// Gera a malha da superfície.
     pub fn calc_mesh(&mut self) {
         let ni = self.ni;
@@ -272,7 +254,7 @@ impl Object {
             } else {
                 knots_i.last().unwrap() - epsilon
             };
-    
+
             let mut interval_j = 0.0;
             for j in 0..resj {
                 let param_j = if interval_j < *knots_j.last().unwrap() {
@@ -280,7 +262,7 @@ impl Object {
                 } else {
                     knots_j.last().unwrap() - epsilon
                 };
-    
+
                 let mut sum = Vec3::zeros();
                 for ki in 0..=ni {
                     for kj in 0..=nj {
