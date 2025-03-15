@@ -1,601 +1,1016 @@
-use rand::Rng;
-use serde::{Serialize, Deserialize};
-use std::sync::Arc;
-use crate::constants::*;
-use crate::types::*;
+use std::collections::HashMap;
+use std::f32::INFINITY;
+use eframe::emath::OrderedFloat;
 use rayon::prelude::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Face {
-    pub vertices: Vec<usize>,
-    pub visible: bool,
-    pub normal: Vec3,
-    pub direction: Vec3,
-    pub centroid: Vec3,
+use crate::constants::*;
+use crate::object::{Face, Object};
+use crate::types::*;
+
+
+#[derive(Clone, PartialEq)]
+pub enum ShaderType {
+    Wireframe,
+    Flat,
+    Gouraud,
+    Phong,
 }
 
-impl Face {
-    /// Calcula a normal da face.
-    pub fn calc_normal(&mut self, vertices: &Vec<Vec3>) {
-        let a: Vec3 = vertices[self.vertices[0]];
-        let b: Vec3 = vertices[self.vertices[1]];
-        let c: Vec3 = vertices[self.vertices[2]];
-
-        let bc: Vec3 = c - b;
-        let ba: Vec3 = a - b;
-
-        self.normal = bc.cross(&ba).normalize();
-    }
-
-    /// Calcula a direção.
-    pub fn calc_direction(&mut self, vrp: &Vec3) {
-        let direction: Vec3 = *vrp - self.centroid;
-        self.direction = direction.normalize();
-    }
-
-    /// Calcula o centroide da face.
-    pub fn calc_centroid(&mut self, vertices: &Vec<Vec3>) {
-        let mut centroid = Vec3::zeros();
-        for i in 0..self.vertices.len() {
-            centroid = centroid + vertices[self.vertices[i]];
-        }
-        self.centroid = centroid / self.vertices.len() as f32;
-    }
+pub struct Camera {
+    pub vrp: Vec3,
+    pub p: Vec3,
+    pub y: Vec3,
 }
 
-/// Estrutura para armazenar uma superfície BSpline.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Object {
-    /// Quantidades de pontos de controle na direção i.
-    ni: usize,
-    /// Quantidades de pontos de controle na direção j.
-    nj: usize,
-    /// Resolução na direção i.
-    resi: usize,
-    /// Resolução na direção j.
-    resj: usize,
-    /// Nós (knots) na direção i.
-    knots_i: Vec<f32>,
-    /// Nós (knots) na direção j.
-    knots_j: Vec<f32>,
-
-    /// Pontos de controle da superfície.
-    pub control_points: Vec<Vec3>,
-
-    /// Vértices da malha.
-    pub vertices: Vec<Vec3>,
-    /// Faces da malha.
-    pub faces: Vec<Face>,
-    /// Centroide da malha.
-    pub centroid: Vec3,
-
-    pub ka: Vec3,
-    pub kd: Vec3,
-    pub ks: Vec3,
-    pub n: f32,
-
-    pub closed: bool,
+pub struct Window {
+    pub xmin: f32,
+    pub xmax: f32,
+    pub ymin: f32,
+    pub ymax: f32,
 }
 
-impl Object {
-    pub fn new(
-        ni: usize,
-        nj: usize,
-        resi: usize,
-        resj: usize,
-        smoothing_iterations: u8,
-        ka: Vec3,
-        kd: Vec3,
-        ks: Vec3,
-        n: f32,
-        closed: bool,
-    ) -> Self {
-        let control_points: Vec<Vec3> = if !closed {
-            Self::gen_control_points(ni, nj, smoothing_iterations)
-        } else {
-            Self::gen_closed_control_points(ni, nj)
+pub struct Viewport {
+    pub umin: f32,
+    pub umax: f32,
+    pub vmin: f32,
+    pub vmax: f32,
+}
+
+pub struct Light {
+    pub l: Vec3,
+    pub il: Vec3,
+    pub ila: Vec3,
+}
+
+pub struct Render {
+    pub shader_type: ShaderType,
+    pub camera: Camera,
+    pub window: Window,
+    pub viewport: Viewport,
+    pub light: Light,
+    pub m_sru_srt: Mat4,
+    pub m_srt_sru: Mat4,
+    zbuffer: Vec<f32>,
+    pub buffer: Vec<u8>,
+    pub buffer_width: usize,
+    pub buffer_height: usize,
+    pub visibility_filter: bool,
+}
+
+impl Default for Render {
+    fn default() -> Self {
+        let shader_type = ShaderType::Wireframe;
+        let camera = Camera {
+            vrp: Vec3::new(0.0, 0.0, 2000.0),
+            p: Vec3::new(0.0, 0.0, 0.0),
+            y: Vec3::new(0.0, 1.0, 0.0),
+        };
+        let window = Window {
+            xmin: -GUI_VIEWPORT_WIDTH / 2.0,
+            xmax: GUI_VIEWPORT_WIDTH / 2.0,
+            ymin: -GUI_VIEWPORT_HEIGHT / 2.0,
+            ymax: GUI_VIEWPORT_HEIGHT / 2.0,
+        };
+        let viewport = Viewport {
+            umin: 0.0,
+            umax: GUI_VIEWPORT_WIDTH - 1.0,
+            vmin: 0.0,
+            vmax: GUI_VIEWPORT_HEIGHT - 1.0,
+        };
+        let light = Light {
+            l: Vec3::new(500.0, 0.0, 2000.0),
+            il: Vec3::new(0.0, 0.0, 255.0),
+            ila: Vec3::new(125.0, 0.0, 0.0),
         };
 
-        let knots_i: Vec<f32> = Self::spline_knots(ni, TI);
-        let knots_j: Vec<f32> = Self::spline_knots(nj, TJ);
+        let m_sru_srt = Mat4::identity();
+        let m_srt_sru = Mat4::identity();
 
-        let vertices: Vec<Vec3> = Vec::with_capacity(resi * resj);
-        let faces: Vec<Face> = Vec::with_capacity((resi - 1) * (resj - 1));
+        let buffer_width = GUI_VIEWPORT_WIDTH as usize;
+        let buffer_height = GUI_VIEWPORT_HEIGHT as usize;
+
+        let buffer = vec![0; buffer_width * buffer_height * 4];
+        let zbuffer = vec![-INFINITY; buffer_width * buffer_height];
 
         let mut obj = Self {
-            ni,
-            nj,
-            resi,
-            resj,
-            knots_i,
-            knots_j,
-
-            control_points,
-            vertices,
-            faces,
-
-            centroid: Vec3::zeros(),
-
-            ka,
-            kd,
-            ks,
-            n,
-
-            closed,
+            shader_type,
+            camera,
+            window,
+            viewport,
+            light,
+            m_sru_srt,
+            m_srt_sru,
+            zbuffer,
+            buffer,
+            buffer_width,
+            buffer_height,
+            visibility_filter: false,
         };
 
-        obj.calc_mesh();
-        obj.calc_edges_and_faces();
-        obj.calc_centroid();
+        obj.calc_sru_srt_matrix();
 
         obj
     }
+}
 
-    pub fn set_ni_nj(&mut self, ni: usize, nj: usize, smoothing_iterations: u8) {
-        self.ni = ni;
-        self.nj = nj;
-
-        self.knots_i = Self::spline_knots(ni, TI);
-        self.knots_j = Self::spline_knots(nj, TJ);
-
-        if self.closed {
-            self.control_points = Self::gen_closed_control_points(ni, nj);
-        } else {
-        self.control_points = Self::gen_control_points(self.ni, self.nj, smoothing_iterations);
-        }
-
-        self.calc_mesh();
-        self.calc_edges_and_faces();
-        self.calc_centroid();
+impl Render {
+    /// Limpa os buffers de imagem e profundidade.
+    pub fn clean_buffers(&mut self) {
+        self.buffer = vec![0; self.buffer.len()];
+        self.zbuffer = vec![-INFINITY; self.zbuffer.len()];
     }
 
-    pub fn get_ni_nj(&self) -> (usize, usize) {
-        (self.ni, self.nj)
-    }
+    /// Algoritmo para desenho de linhas.
+    fn draw_line(
+        &mut self,
+        start: &Vec3,
+        end: &Vec3,
+        color: [u8; 4],
+    ) {
+        let x0 = start.x as i32;
+        let y0 = start.y as i32;
+        let x1 = end.x as i32;
+        let y1 = end.y as i32;
 
-    pub fn set_resi_resj(&mut self, resi: usize, resj: usize) {
-        self.resi = resi;
-        self.resj = resj;
+        let dx = (x1 - x0).abs();
+        let dy = (y1 - y0).abs();
 
-        self.calc_mesh();
-        self.calc_edges_and_faces();
-        self.calc_centroid();
-    }
+        let sx = if x0 < x1 { 1 } else { -1 };
+        let sy = if y0 < y1 { 1 } else { -1 };
 
-    pub fn get_resi_resj(&self) -> (usize, usize) {
-        (self.resi, self.resj)
-    }
+        let mut x = x0;
+        let mut y = y0;
 
-    //--------------------------------------------------------------------------------
-    // Geração da superfície
-    //--------------------------------------------------------------------------------
+        let mut err = dx - dy;
 
-    fn gen_control_points(ni: usize, nj: usize, smoothing_iterations: u8) -> Vec<Vec3> {
-        let mut rng = rand::thread_rng();
-        let mut control_points: Vec<Vec3> = Vec::with_capacity((ni + 1) * (nj + 1));
-        let ti = 4.0 / ni as f32;
-        let tj = 4.0 / nj as f32;
-        let mut i = 0.0;
-        let mut j = 0.0;
-        for _ in 0..=ni {
-            j = 0.0;
-            for _ in 0..=nj {
-                control_points.push(Vec3::new(
-                    i,
-                    j,
-                    rng.gen_range(0.0..2.0),
-                ));
-                j += tj;
+        loop {
+            if self.is_valid_i(y) && self.is_valid_j(x) {
+                self.paint(y, x, color);
             }
-            i += ti;
-        }
-        Self::smooth_control_points(&mut control_points, smoothing_iterations, ni, nj);
-        control_points
-    }
 
-    /// Renomeada para representar objeto fechado
-    fn gen_closed_control_points(ni: usize, nj: usize) -> Vec<Vec3> {
-        let mut control_points: Vec<Vec3> = Vec::with_capacity((ni + 1) * (nj + 1));
-        let step_i = 8.0 * std::f32::consts::PI / (ni + 1)  as f32;
-        let step_j = 4.0 / nj as f32;
-        for i in 0..=ni {
-            for j in 0..=nj {
-                let x = i as f32 * step_i;
-                let y = j as f32 * step_j;
-                control_points.push(Vec3::new(x.cos(), y,  x.sin()));
+            if x == x1 && y == y1 {
+                break;
             }
-        }
-        control_points
-    }
 
-    fn spline_knots(n: usize, t: usize) -> Vec<f32> {
-        let mut knots = Vec::with_capacity(n + t + 1);
-        for j in 0..=(n + t) {
-            if j < t {
-                knots.push(0.0);
-            } else if j <= n {
-                knots.push((j + 1 - t) as f32);
-            } else {
-                knots.push((n + 2 - t) as f32);
+            let e2 = 2 * err;
+
+            if e2 > -dy {
+                err -= dy;
+                x += sx;
             }
-        }
-        knots
-    }
 
-    fn spline_blend(k: usize, t: usize, u: &[f32], v: f32) -> f32 {
-        if t == 1 {
-            if u[k] <= v && v < u[k + 1] {
-                1.0
-            } else {
-                0.0
-            }
-        } else {
-            let mut value = 0.0;
-            let denom1 = u[k + t - 1] - u[k];
-            let denom2 = u[k + t] - u[k + 1];
-
-            if denom1 != 0.0 {
-                value += ((v - u[k]) / denom1) * Self::spline_blend(k, t - 1, u, v);
-            }
-            if denom2 != 0.0 {
-                value += ((u[k + t] - v) / denom2) * Self::spline_blend(k + 1, t - 1, u, v);
-            }
-            value
-        }
-    }
-
-    fn compute_basis(knots: &[f32], n: usize, res: usize, t: usize) -> Vec<f32> {
-        let mut basis = vec![0.0; (n + 1) * res];
-        let increment = (n as f32 + 2.0 - t as f32) / ((res - 1) as f32);
-        let epsilon = 1e-6;
-        for i in 0..res {
-            let raw_u = i as f32 * increment;
-            let u = if raw_u < knots[knots.len() - 1] {
-                raw_u
-            } else {
-                knots[knots.len() - 1] - epsilon
-            };
-            for k in 0..=n {
-                basis[k * res + i] = Self::spline_blend(k, t, knots, u);
-            }
-        }
-        basis
-    }
-
-    /// Gera a malha da superfície.
-    pub fn calc_mesh(&mut self) {
-        let ni = self.ni;
-        let nj = self.nj;
-        let resi = self.resi;
-        let resj = self.resj;
-
-        // 1) Pré-computar as funções de base para as duas direções
-        let basis_i = Self::compute_basis(&self.knots_i, ni, resi, TI);
-        let basis_j = Self::compute_basis(&self.knots_j, nj, resj, TJ);
-
-        // 2) Calcular os vértices em paralelo usando Rayon
-        let cps = self.control_points.clone();
-        let new_vertices: Vec<Vec3> = (0..resi)
-            .into_par_iter()
-            .flat_map_iter(|i| {
-                // Clonar as variáveis para uso no iterador interno
-                let basis_i_c = basis_i.clone();
-                let basis_j_c = basis_j.clone();
-                let cps_c = cps.clone();
-                (0..resj).map(move |j| {
-                    let mut sum = Vec3::zeros();
-                    for ki in 0..=ni {
-                        let bi = basis_i_c[ki * resi + i];
-                        for kj in 0..=nj {
-                            let bj = basis_j_c[kj * resj + j];
-                            let blend = bi * bj;
-                            let cp_idx = ki * (nj + 1) + kj;
-                            sum = sum + (cps_c[cp_idx] * blend);
-                        }
-                    }
-                    sum
-                })
-            })
-            .collect();
-
-        // 3) Atribuir os vértices calculados
-        self.vertices = new_vertices;
-    }
-
-    /// Gera as faces triangulares da malha.
-    fn calc_edges_and_faces_tri(&mut self) {
-        let i_max = if self.closed { self.resi } else { self.resi - 1 };
-        for i in 0..i_max {
-            let next_i = if self.closed { (i + 1) % self.resi } else { i + 1 };
-            for j in 0..self.resj - 1 {
-                let a_index = next_i * self.resj + j;
-                let b_index = next_i * self.resj + (j + 1);
-                let c_index = i * self.resj + (j + 1);
-                let d_index = i * self.resj + j;
-
-                let abc_face = Face {
-                    vertices: vec![a_index, b_index, c_index, a_index],
-                    visible: false,
-                    normal: Vec3::zeros(),
-                    direction: Vec3::zeros(),
-                    centroid: Vec3::zeros(),
-                };
-                self.faces.push(abc_face);
-
-                let acd_face = Face {
-                    vertices: vec![a_index, c_index, d_index, a_index],
-                    visible: false,
-                    normal: Vec3::zeros(),
-                    direction: Vec3::zeros(),
-                    centroid: Vec3::zeros(),
-                };
-                self.faces.push(acd_face);
+            if e2 < dx {
+                err += dx;
+                y += sy;
             }
         }
     }
 
-    fn calc_edges_and_faces_quad(&mut self) {
-        let i_max = if self.closed { self.resi } else { self.resi - 1 };
-        for i in 0..i_max {
-            let next_i = if self.closed { (i + 1) % self.resi } else { i + 1 };
-            for j in 0..self.resj - 1 {
-                let a_index = next_i * self.resj + j;
-                let b_index = next_i * self.resj + (j + 1);
-                let c_index = i * self.resj + (j + 1);
-                let d_index = i * self.resj + j;
-
-                let face = Face {
-                    vertices: vec![a_index, b_index, c_index, d_index, a_index],
-                    visible: false,
-                    normal: Vec3::zeros(),
-                    direction: Vec3::zeros(),
-                    centroid: Vec3::zeros(),
-                };
-                self.faces.push(face);
-            }
-        }
-        // Removida abordagem de criação de faces extras; o fechamento é tratado pelo wrap modular.
+    /// Verifica se o índice i é válido.
+    #[inline(always)]
+    fn is_valid_i(
+        &self,
+        i: i32,
+    ) -> bool {
+        i >= self.viewport.vmin as i32 && i <= self.viewport.vmax as i32
     }
 
-    // Novo método para gerar arestas e faces com base na flag use_triangular_faces
-    pub fn calc_edges_and_faces(&mut self) {
-        self.faces.clear();
-        if USE_TRIANGULAR_FACES {
-            self.calc_edges_and_faces_tri();
-        } else {
-            self.calc_edges_and_faces_quad();
+    /// Verifica se o índice j é válido.
+    #[inline(always)]
+    fn is_valid_j(
+        &self,
+        j: i32,
+    ) -> bool {
+        j >= self.viewport.umin as i32 && j <= self.viewport.umax as i32
+    }
+
+    /// Converte coordenadas SRT para do buffer de imagem.
+    /*#[inline(always)]
+    fn srt_to_buffer(
+        &self,
+        i: i32,
+        j: i32,
+    ) -> (i32, i32) {
+        let ni = (i as f32 - self.viewport.vmin) / (self.viewport.vmax - self.viewport.vmin);
+        let nj = (j as f32 - self.viewport.umin) / (self.viewport.umax - self.viewport.umin);
+
+        let y = (ni * (self.buffer_height as f32 - 1.0)).round() as i32;
+        let x = (nj * (self.buffer_width as f32 - 1.0)).round() as i32;
+
+        (y, x)
+    }*/
+
+    /// Seta um Z no ZBuffer.
+    #[inline(always)]
+    fn set_zbuffer(
+        &mut self,
+        i: i32,
+        j: i32,
+        z: f32,
+    ) {
+       //let (y, x) = self.srt_to_buffer(i, j);
+        let j: usize = j as usize;
+        let i: usize = i as usize;
+        
+        let index = i * self.buffer_width + j;
+        self.zbuffer[index] = z;
+    }
+
+    /// Verifica se um pixel pode ser pintado.
+    #[inline(always)]
+    fn can_paint(
+        &self,
+        i: i32,
+        j: i32,
+        z: f32,
+    ) -> bool {
+        //let (y, x) = self.srt_to_buffer(i, j);
+        let j = j as usize;
+        let i = i as usize;
+        let index = i * self.buffer_width + j;
+        z > self.zbuffer[index]
+    }
+
+    /// Pinta um pixel no buffer de imagem.
+    #[inline(always)]
+    fn paint(
+        &mut self,
+        i: i32,
+        j: i32,
+        color: [u8; 4],
+    ) {
+        //let (y, x) = self.srt_to_buffer(i, j);
+        let j = j as usize;
+        let i = i as usize;
+
+        //if (x >= self.buffer_width) || (y >= self.buffer_height) {
+        //    return;
+        //}
+
+        let index = (i * self.buffer_width + j) * 4;
+        self.buffer[index]     = color[0];
+        self.buffer[index + 1] = color[1];
+        self.buffer[index + 2] = color[2];
+        self.buffer[index + 3] = color[3];
+    }
+
+    /// Atualiza as faces da malha.
+    fn update_faces(
+        &self,
+        object: &mut Object
+    ) {
+        for face in object.faces.iter_mut() {
+            face.calc_normal(&object.vertices);
+            face.calc_centroid(&object.vertices);
+            face.calc_direction(&self.camera.vrp);
+            self.calc_visibility(face);
         }
     }
 
-    /// Calcula o centroide através do box envolvente.
-    pub fn calc_centroid(&mut self) {
-        let first: Vec3 = self.vertices[0];
-        let mut min: Vec3 = first;
-        let mut max: Vec3 = first;
-
-        for p in &self.vertices {
-            min.x = p.x.min(min.x);
-            min.y = p.y.min(min.y);
-            min.z = p.z.min(min.z);
-            max.x = p.x.max(max.x);
-            max.y = p.y.max(max.y);
-            max.z = p.z.max(max.z);
-        }
-
-        self.centroid = Vec3::new(
-            (min.x + max.x) / 2.0,
-            (min.y + max.y) / 2.0,
-            (min.z + max.z) / 2.0,
-        );
+    /// Calcula o teste de visibilidade das arestas da malha.
+    fn calc_visibility(
+        &self,
+        face: &mut Face,
+    ) {
+        let o: Vec3 = face.direction;
+        let n: Vec3 = face.normal;
+        let visibility = o.dot(&n) > 0.0;
+        face.visible = visibility;
     }
 
-    //--------------------------------------------------------------------------------
-    // Métodos de transformação
-    //--------------------------------------------------------------------------------
+    /// Calcula a matriz de transformação de coordenadas em SRU para SRC.
+    pub fn calc_sru_src_matrix(&self) -> Mat4 {
+        let n: Vec3 = self.camera.vrp - self.camera.p;
+        let nn: Vec3 = n.normalize();
 
-    /// Gera a matriz de translação.
-    fn gen_translation_matrix(&self, translation: &Vec3) -> Mat4 {
+        let v: Vec3 = self.camera.y - (self.camera.y.dot(&nn) * nn);
+        let vn: Vec3 = v.normalize();
+
+        let un: Vec3 = vn.cross(&nn);
+
         Mat4::new(
-            1.0, 0.0, 0.0, translation.x,
-            0.0, 1.0, 0.0, translation.y,
-            0.0, 0.0, 1.0, translation.z,
+            un.x, un.y, un.z, -self.camera.vrp.dot(&un),
+            vn.x, vn.y, vn.z, -self.camera.vrp.dot(&vn),
+            nn.x, nn.y, nn.z, -self.camera.vrp.dot(&nn),
             0.0, 0.0, 0.0, 1.0,
         )
     }
 
-    /// Aplica a transformação de translação nos pontos de controle e vértices
-    pub fn translate(&mut self, translation: &Vec3) {
-        let translation_matrix: Mat4 = self.gen_translation_matrix(translation);
-
-        for control_point in &mut self.control_points {
-            let cp: Mat4x1 = translation_matrix * vec3_to_mat4x1(control_point);
-            *control_point = cp.xyz();
-        }
-
-        for vertex in &mut self.vertices {
-            let vt: Mat4x1 = translation_matrix * vec3_to_mat4x1(vertex);
-            *vertex = vt.xyz();
-        }
-
-        self.calc_centroid();
+    /// Calcula a matriz de projeção axonométrica isométrica.
+    fn calc_proj_matrix(&self) -> Mat4 {
+        Mat4::identity()
     }
 
-    /// Aplica a transformação de escala nos pontos de controle e vértices
-    pub fn scale(&mut self, scale: f32) {
-        let scale_matrix: Mat4 = Mat4::new(
-            scale, 0.0, 0.0, 0.0,
-            0.0, scale, 0.0, 0.0,
-            0.0, 0.0, scale, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        );
+    /// Calcula a matriz de transformação janela/porta de visão.
+    fn calc_jp_matrix(&self) -> Mat4 {
+        let sx = (self.viewport.umax - self.viewport.umin) / (self.window.xmax - self.window.xmin);
+        let sy = (self.viewport.vmin - self.viewport.vmax) / (self.window.ymax - self.window.ymin);
+        let tx = -self.window.xmin * sx + self.viewport.umin;
+        let ty = self.window.ymin * ((self.viewport.vmax - self.viewport.vmin) / (self.window.ymax - self.window.ymin)) + self.viewport.vmax;
 
-        let centroid = &self.centroid;
-        let minus_centroid = -centroid;
-        let to_origin: Mat4 = self.gen_translation_matrix(&centroid);
-        let to_centroid: Mat4 = self.gen_translation_matrix(&minus_centroid);
-
-        for control_point in &mut self.control_points {
-            let mut cp: Mat4x1 = to_centroid * vec3_to_mat4x1(control_point);
-            cp = scale_matrix * cp;
-            cp = to_origin * cp;
-            *control_point = cp.xyz();
-        }
-
-        for vertex in &mut self.vertices {
-            let mut vt: Mat4x1 = to_centroid * vec3_to_mat4x1(vertex);
-            vt = scale_matrix * vt;
-            vt = to_origin * vt;
-            *vertex = vt.xyz();
-        }
-    }
-
-    /// Aplica a transformação de rotação em X nos pontos de controle e vértices
-    pub fn rotate_x(&mut self, angle: f32) {
-        let cos_theta = angle.cos();
-        let sin_theta = angle.sin();
-
-        let rotation_matrix: Mat4 = Mat4::new(
-            1.0, 0.0, 0.0, 0.0,
-            0.0, cos_theta, -sin_theta, 0.0,
-            0.0, sin_theta, cos_theta, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        );
-
-        let centroid = &self.centroid;
-        let minus_centroid = -centroid;
-        let to_origin: Mat4 = self.gen_translation_matrix(&centroid);
-        let to_centroid: Mat4 = self.gen_translation_matrix(&minus_centroid);
-
-        for control_point in &mut self.control_points {
-            let mut cp: Mat4x1 = to_centroid * vec3_to_mat4x1(control_point);
-            cp = rotation_matrix * cp;
-            cp = to_origin * cp;
-            *control_point = cp.xyz();
-        }
-
-        for vertex in &mut self.vertices {
-            let mut vt: Mat4x1 = to_centroid * vec3_to_mat4x1(vertex);
-            vt = rotation_matrix * vt;
-            vt = to_origin * vt;
-            *vertex = vt.xyz();
-        }
-
-        //self.calc_centroid();
-    }
-
-    /// Aplica a transformação de rotação nos pontos de controle e vértices
-    pub fn rotate(&mut self, rotation: &Vec3) {
-        self.rotate_x(rotation.x.to_radians());
-        self.rotate_y(rotation.y.to_radians());
-        self.rotate_z(rotation.z.to_radians());
-    }
-
-    /// Aplica a transformação de rotação em Y nos pontos de controle e vértices
-    pub fn rotate_y(&mut self, angle: f32) {
-        let cos_theta = angle.cos();
-        let sin_theta = angle.sin();
-
-        let rotation_matrix: Mat4 = Mat4::new(
-            cos_theta, 0.0, sin_theta, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            -sin_theta, 0.0, cos_theta, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        );
-
-        let centroid = &self.centroid;
-        let minus_centroid = -centroid;
-        let to_origin: Mat4 = self.gen_translation_matrix(&centroid);
-        let to_centroid: Mat4 = self.gen_translation_matrix(&minus_centroid);
-
-        for control_point in &mut self.control_points {
-            let mut cp: Mat4x1 = to_centroid * vec3_to_mat4x1(control_point);
-            cp = rotation_matrix * cp;
-            cp = to_origin * cp;
-            *control_point = cp.xyz();
-        }
-
-        for vertex in &mut self.vertices {
-            let mut vt: Mat4x1 = to_centroid * vec3_to_mat4x1(vertex);
-            vt = rotation_matrix * vt;
-            vt = to_origin * vt;
-            *vertex = vt.xyz();
-        }
-
-        //self.calc_centroid();
-    }
-
-    /// Aplica a transformação de rotação em Y nos pontos de controle e vértices
-    pub fn rotate_z(&mut self, angle: f32) {
-        let cos_theta = angle.cos();
-        let sin_theta = angle.sin();
-
-        let rotation_matrix: Mat4 = Mat4::new(
-            cos_theta, -sin_theta, 0.0, 0.0,
-            sin_theta, cos_theta, 0.0, 0.0,
+        Mat4::new(
+            sx, 0.0, 0.0, tx,
+            0.0, sy, 0.0, ty,
             0.0, 0.0, 1.0, 0.0,
             0.0, 0.0, 0.0, 1.0,
-        );
-
-        let centroid = &self.centroid;
-        let minus_centroid = -centroid;
-        let to_origin: Mat4 = self.gen_translation_matrix(&centroid);
-        let to_centroid: Mat4 = self.gen_translation_matrix(&minus_centroid);
-
-        for control_point in &mut self.control_points {
-            let mut cp: Mat4x1 = to_centroid * vec3_to_mat4x1(control_point);
-            cp = rotation_matrix * cp;
-            cp = to_origin * cp;
-            *control_point = cp.xyz();
-        }
-
-        for vertex in &mut self.vertices {
-            let mut vt: Mat4x1 = to_centroid * vec3_to_mat4x1(vertex);
-            vt = rotation_matrix * vt;
-            vt = to_origin * vt;
-            *vertex = vt.xyz();
-        }
-
-        //self.calc_centroid();
+        )
     }
 
+    /// Calcula a matriz de transformação de coordenadas em SRU para SRT (matriz concatenada).
+    fn calc_sru_srt_matrix(&mut self) {
+        self.m_sru_srt = self.calc_jp_matrix() * self.calc_proj_matrix() * self.calc_sru_src_matrix();
+        self.m_srt_sru = (self.calc_proj_matrix() * self.calc_sru_src_matrix()).try_inverse().unwrap_or_else(Mat4::identity);
+    }
 
-    //--------------------------------------------------------------------------------
-    // Outros métodos
-    //--------------------------------------------------------------------------------
+    /// Converte os pontos para o sistema de referência da tela.
+    pub fn calc_srt_convertions(
+        &self,
+        sru_coords: &[Vec3],
+    ) -> Vec<Vec3> {
+        let mut srt_coords = Vec::with_capacity(sru_coords.len());
+        for i in 0..sru_coords.len() {
+            let mut srt: Mat4x1 = self.m_sru_srt * vec3_to_mat4x1(&sru_coords[i]);
+            srt.x /= srt.w;
+            srt.y /= srt.w;
+            srt_coords.push(srt.xyz());
+        }
+        srt_coords
+    }
 
-    /// Suaviza as coordenadas z dos pontos de controle.
-    fn smooth_control_points(
-        control_points: &mut Vec<Vec3>,
-        smoothing_iterations: u8,
-        ni: usize,
-        nj: usize,
+    /// Calcula as interseções das arestas da face com as linhas horizontais.
+    pub fn calc_intersections(
+        vertices_srt: &[Vec3],
+        face: &Face,
+    ) -> HashMap<i32, Vec<(f32, f32)>> {
+        let mut intersections = HashMap::new();
+
+        for i in 0..face.vertices.len() - 1 {
+            let mut x0 = vertices_srt[face.vertices[i]].x;
+            let mut y0 = vertices_srt[face.vertices[i]].y.round();
+            let mut z0 = vertices_srt[face.vertices[i]].z;
+            let mut x1 = vertices_srt[face.vertices[i + 1]].x;
+            let mut y1 = vertices_srt[face.vertices[i + 1]].y.round();
+            let mut z1 = vertices_srt[face.vertices[i + 1]].z;
+
+            if y0 > y1 {
+                let x = x0;
+                x0 = x1;
+                x1 = x;
+
+                let y = y0;
+                y0 = y1;
+                y1 = y;
+
+                let z = z0;
+                z0 = z1;
+                z1 = z;
+            }
+
+            let dx = x1 - x0;
+            let dy = y1 - y0;
+            let dz = z1 - z0;
+            let tx = dx / dy;
+            let tz = dz / dy;
+
+            let mut x = x0;
+            let mut y = y0.round();
+            let mut z = z0;
+
+            while y < y1 {
+                if y >= 0.0 {
+                    let x_intersections = intersections.entry(y as i32)
+                        .or_insert(Vec::new());
+                    x_intersections.push((x, z));
+                }
+                x += tx;
+                y += 1.0;
+                z += tz;
+            }
+        }
+
+        for (_, intersections) in intersections.iter_mut() {
+            intersections.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        }
+
+        intersections
+    }
+
+    /// Calcula as interseções das arestas da face com as linhas horizontais.
+    pub fn calc_intersections_for_gouraud(
+        vertices_srt: &[Vec3],
+        intensities: &[Vec3],
+        face: &Face,
+    ) -> HashMap<i32, Vec<(f32, f32, f32, f32, f32)>> {
+        let mut intersections = HashMap::new();
+
+        for i in 0..face.vertices.len() - 1 {
+            let mut x0 = vertices_srt[face.vertices[i]].x;
+            let mut y0 = vertices_srt[face.vertices[i]].y.round();
+            let mut z0 = vertices_srt[face.vertices[i]].z;
+            let mut x1 = vertices_srt[face.vertices[i + 1]].x;
+            let mut y1 = vertices_srt[face.vertices[i + 1]].y.round();
+            let mut z1 = vertices_srt[face.vertices[i + 1]].z;
+
+            let mut r0 = intensities[face.vertices[i]].x;
+            let mut g0 = intensities[face.vertices[i]].y;
+            let mut b0 = intensities[face.vertices[i]].z;
+            let mut r1 = intensities[face.vertices[i + 1]].x;
+            let mut g1 = intensities[face.vertices[i + 1]].y;
+            let mut b1 = intensities[face.vertices[i + 1]].z;
+
+            if y0 > y1 {
+                let x = x0;
+                x0 = x1;
+                x1 = x;
+
+                let y = y0;
+                y0 = y1;
+                y1 = y;
+
+                let z = z0;
+                z0 = z1;
+                z1 = z;
+
+                let r = r0;
+                r0 = r1;
+                r1 = r;
+
+                let g = g0;
+                g0 = g1;
+                g1 = g;
+
+                let b = b0;
+                b0 = b1;
+                b1 = b;
+            }
+
+            let dx = x1 - x0;
+            let dy = y1 - y0;
+            let dz = z1 - z0;
+            let dr = r1 - r0;
+            let dg = g1 - g0;
+            let db = b1 - b0;
+
+            let tx = dx / dy;
+            let tz = dz / dy;
+            let tr = dr / dy;
+            let tg = dg / dy;
+            let tb = db / dy;
+
+            let mut x = x0;
+            let mut y = y0.round();
+            let mut z = z0;
+            let mut r = r0;
+            let mut g = g0;
+            let mut b = b0;
+
+            while y < y1 {
+                if y >= 0.0 {
+                    let x_intersections = intersections.entry(y as i32)
+                        .or_insert(Vec::new());
+                    x_intersections.push((x, z, r, g, b));
+                }
+                x += tx;
+                y += 1.0;
+                z += tz;
+                r += tr;
+                g += tg;
+                b += tb;
+            }
+        }
+
+        for (_, intersections) in intersections.iter_mut() {
+            intersections.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        }
+
+        intersections
+    }
+
+    /// Calcula as interseções das arestas da face com as linhas horizontais para Phong.
+    pub fn calc_intersections_for_phong(
+        vertices_srt: &[Vec3],
+        normals: &[Vec3],
+        face: &Face,
+    ) -> HashMap<i32, Vec<(f32, f32, Vec3)>> {
+        let mut intersections = HashMap::new();
+
+        for i in 0..face.vertices.len() - 1 {
+            let mut x0 = vertices_srt[face.vertices[i]].x;
+            let mut y0 = vertices_srt[face.vertices[i]].y.round();
+            let mut z0 = vertices_srt[face.vertices[i]].z;
+            let mut x1 = vertices_srt[face.vertices[i + 1]].x;
+            let mut y1 = vertices_srt[face.vertices[i + 1]].y.round();
+            let mut z1 = vertices_srt[face.vertices[i + 1]].z;
+
+            let mut n0: Vec3 = normals[face.vertices[i]];
+            let mut n1: Vec3 = normals[face.vertices[i + 1]];
+
+            if y0 > y1 {
+                std::mem::swap(&mut x0, &mut x1);
+                std::mem::swap(&mut y0, &mut y1);
+                std::mem::swap(&mut z0, &mut z1);
+                std::mem::swap(&mut n0, &mut n1);
+            }
+
+            let dx = x1 - x0;
+            let dy = y1 - y0;
+            let dz = z1 - z0;
+            let dn = n1 - n0;
+
+            let tx = dx / dy;
+            let tz = dz / dy;
+            let tn = dn / dy;
+
+            let mut x = x0;
+            let mut y = y0.round();
+            let mut z = z0;
+            let mut n = n0;
+
+            while y < y1 {
+                if y >= 0.0 {
+                    let x_intersections = intersections.entry(y as i32)
+                        .or_insert(Vec::new());
+                    x_intersections.push((x, z, n));
+                }
+                x += tx;
+                y += 1.0;
+                z += tz;
+                n += tn;
+            }
+        }
+
+        for (_, intersections) in intersections.iter_mut() {
+            intersections.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        }
+
+        intersections
+    }
+
+    /// Calcula a cor de preenchimento da face.
+    #[inline(always)]
+    fn calc_color(
+        &self,
+        ka: Vec3,
+        kd: Vec3,
+        ks: Vec3,
+        n: f32,
+        nn: Vec3,
+        position: Vec3,
+    ) -> [u8; 4] {
+        let mut it: Vec3 = Vec3::zeros();
+
+        let ln: Vec3 = (self.light.l - position).normalize();
+        let cos_theta = nn.dot(&ln);
+
+        let sn: Vec3 = (self.camera.vrp - position).normalize();
+        let r: Vec3 = 2.0 * cos_theta * sn - ln;
+        let cos_alpha = r.dot(&sn);
+
+        for i in 0..3 {
+            let ia = self.light.ila[i] * ka[i];
+            it[i] += ia;
+
+            if cos_theta > 0.0 {
+                let id = self.light.il[i] * kd[i] * cos_theta;
+                it[i] += id;
+
+                if cos_alpha > 0.0 {
+                    let is = self.light.il[i] * ks[i] * cos_alpha.powf(n);
+                    it[i] += is;
+                };
+            }
+
+            if it[i] < 0.0 {
+                it[i] = 0.0;
+            } else if it[i] > 255.0 {
+                it[i] = 255.0;
+            }
+        }
+
+        [it[0] as u8, it[1] as u8, it[2] as u8, 255]
+    }
+
+    /// Calcula a cor de preenchimento da face para Phong.
+    #[inline(always)]
+    fn calc_color_for_phong(
+        &self,
+        ka: Vec3,
+        kd: Vec3,
+        ks: Vec3,
+        n: f32,
+        nn: Vec3,
+        position: Vec3,
+    ) -> [u8; 4] {
+        let mut it: Vec3 = Vec3::zeros();
+
+        let ln: Vec3 = (self.light.l - position).normalize();
+        let cos_theta = nn.dot(&ln);
+
+        let sn: Vec3 = (self.camera.vrp - position).normalize();
+        let hn: Vec3 = (ln + sn).normalize();
+        let cos_alpha = nn.dot(&hn);
+
+        for i in 0..3 {
+            let ia = self.light.ila[i] * ka[i];
+            it[i] += ia;
+
+            if cos_theta > 0.0 {
+                let id = self.light.il[i] * kd[i] * cos_theta;
+                it[i] += id;
+
+                if cos_alpha > 0.0 {
+                    let is = self.light.il[i] * ks[i] * cos_alpha.powf(n);
+                    it[i] += is;
+                };
+            }
+
+            if it[i] < 0.0 {
+                it[i] = 0.0;
+            } else if it[i] > 255.0 {
+                it[i] = 255.0;
+            }
+        }
+
+        [it[0] as u8, it[1] as u8, it[2] as u8, 255]
+    }
+
+    /// Renderiza as faces de uma malha.
+    pub fn render(
+        &mut self,
+        object: &mut Object,
+        primary_edge_color: [u8; 4],
+        secondary_edge_color: [u8; 4],
     ) {
-        for _ in 0..smoothing_iterations {
-            let mut new_control_points: Vec<Vec3> = control_points.clone();
+        match self.shader_type {
+            ShaderType::Wireframe => {
+                self.render_wireframe(object, primary_edge_color, secondary_edge_color);
+            }
+            ShaderType::Flat => {
+                self.render_flat(object, primary_edge_color, secondary_edge_color);
+            }
+            ShaderType::Gouraud => {
+                self.render_gouraud(object, primary_edge_color, secondary_edge_color);
+            }
+            ShaderType::Phong => {
+                self.render_phong(object, primary_edge_color, secondary_edge_color);
+            }
+        }
+    }
 
-            for i in 1..(ni - 1) {
-                for j in 1..(nj - 1) {
-                    let index: usize = i * (nj + 1) + j;
-                    let neighbors: [Vec3; 4] = [
-                        control_points[(i - 1) * (nj + 1) + j],
-                        control_points[(i + 1) * (nj + 1) + j],
-                        control_points[i * (nj + 1) + (j - 1)],
-                        control_points[i * (nj + 1) + (j + 1)],
-                    ];
+    /// Preenche as faces da malha com a técnica de wireframe.
+    fn render_wireframe(
+        &mut self,
+        object: &mut Object,
+        primary_edge_color: [u8; 4],
+        secondary_edge_color: [u8; 4],
+    ) {
+        self.update_faces(object);
+        let vertices_srt = self.calc_srt_convertions(&object.vertices);
 
-                    let avg_z = neighbors.iter().map(|v| v.z).sum::<f32>() / neighbors.len() as f32;
-                    new_control_points[index].z = avg_z;
+        let mut faces = object.faces.clone();
+        faces.sort_by(|a, b| {
+            let a_depth = a.vertices.iter().map(|&i| vertices_srt[i].z).sum::<f32>() / a.vertices.len() as f32;
+            let b_depth = b.vertices.iter().map(|&i| vertices_srt[i].z).sum::<f32>() / b.vertices.len() as f32;
+            let a_depth = OrderedFloat(a_depth);
+            let b_depth = OrderedFloat(b_depth);
+            a_depth.cmp(&b_depth)
+        });
+
+        // Para cada face, calcula as interseções da scanline
+        for face in faces.iter_mut() {
+            if self.visibility_filter && !face.visible {
+                continue;
+            }
+
+            let intersections = Self::calc_intersections(&vertices_srt, face);
+
+            // Para cada scanline i
+            for (i, scaline_intersections) in intersections.iter() {
+                if scaline_intersections.len() < 2 {
+                    continue;
+                }
+
+                if !self.is_valid_i(*i) {
+                    continue;
+                }
+
+                let mut counter = 0;
+
+                // Para cada par de interseções da scanline
+                while counter < scaline_intersections.len() {
+                    let x0 = scaline_intersections[counter].0.ceil() as i32;
+                    let x1 = scaline_intersections[counter + 1].0.floor() as i32;
+
+                    counter += 2;
+
+                    if x1 < x0 {
+                        continue;
+                    }
+
+                    for j in x0..=x1 {
+                        if !self.is_valid_j(j) {
+                            continue;
+                        }
+
+                        let color = [0, 0, 0, 0];
+                        self.paint(*i, j, color);
+                    }
                 }
             }
 
-            *control_points = new_control_points;
+            let color = if face.visible { primary_edge_color } else { secondary_edge_color };
+
+            for vertex_index in 1..face.vertices.len() {
+                let start: &Vec3 = &vertices_srt[face.vertices[vertex_index - 1]];
+                let end: &Vec3 = &vertices_srt[face.vertices[vertex_index]];
+                self.draw_line(start, end, color);
+            }
         }
     }
 
-    /// Calcula as normais das faces.
-    pub fn calc_normals(&mut self) {
-        for face in &mut self.faces {
-            face.calc_normal(&self.vertices);
+    fn render_flat(
+        &mut self,
+        object: &mut Object,
+        primary_edge_color: [u8; 4],
+        secondary_edge_color: [u8; 4],
+    ) {
+        self.update_faces(object);
+
+        let vertices_srt = self.calc_srt_convertions(&object.vertices);
+
+        for face in object.faces.iter_mut() {
+            if self.visibility_filter && !face.visible {
+                continue;
+            }
+
+            let color = self.calc_color(
+                object.ka,
+                object.kd,
+                object.ks,
+                object.n,
+                face.normal,
+                face.centroid,
+            );
+
+            let intersections = Self::calc_intersections(&vertices_srt, face);
+
+            // Para cada scanline i
+            for (i, scaline_intersections) in intersections.iter() {
+                if scaline_intersections.len() < 2 {
+                    continue;
+                }
+
+                if !self.is_valid_i(*i) {
+                    continue;
+                }
+
+                let mut counter = 0;
+
+                // Para cada par de interseções da scanline
+                while counter < scaline_intersections.len() {
+                    let x0: i32 = scaline_intersections[counter].0.ceil() as i32;
+                    let x1: i32 = scaline_intersections[counter + 1].0.floor() as i32;
+                    let z0: f32 = scaline_intersections[counter].1;
+                    let z1: f32 = scaline_intersections[counter + 1].1;
+
+                    counter += 2;
+
+                    if x1 < x0 {
+                        continue;
+                    }
+
+                    let dx = (x1 - x0) as f32;
+                    let dz = z1 - z0;
+                    let tz = dz / dx;
+
+                    let mut z: f32 = z0;
+
+                    // Para cada pixel na scanline
+                    for j in x0..=x1 {
+                        if !self.is_valid_j(j) {
+                            continue;
+                        }
+
+                        if self.can_paint(*i, j, z) {
+                            self.paint(*i, j, color);
+                            self.set_zbuffer(*i, j, z);
+                        }
+
+                        z += tz;
+                    }
+                }
+            }
+        }
+    }
+
+    fn render_gouraud(
+        &mut self,
+        object: &mut Object,
+        primary_edge_color: [u8; 4],
+        secondary_edge_color: [u8; 4],
+    ) {
+        self.update_faces(object);
+
+        let vertices_srt: Vec<Vec3> = self.calc_srt_convertions(&object.vertices);
+
+        // Paraleliza o cálculo das intensidades dos vértices
+        let vertex_intensities: Vec<Vec3> = object.vertices
+            .par_iter()
+            .enumerate()
+            .map(|(i, vertex)| {
+                let mut normal: Vec3 = Vec3::zeros();
+                for face in &object.faces {
+                    if face.vertices.contains(&i) {
+                        normal += face.normal;
+                    }
+                }
+                normal = normal.normalize();
+                let color = self.calc_color(
+                    object.ka,
+                    object.kd,
+                    object.ks,
+                    object.n,
+                    normal,
+                    *vertex,
+                );
+                Vec3::new(color[0] as f32, color[1] as f32, color[2] as f32)
+            })
+            .collect();
+
+        for face in object.faces.iter_mut() {
+            if self.visibility_filter && !face.visible {
+                continue;
+            }
+
+            let intersections = Self::calc_intersections_for_gouraud(&vertices_srt, &vertex_intensities, face);
+
+            for (i, scaline_intersections) in intersections.iter() {
+                if scaline_intersections.len() < 2 {
+                    continue;
+                }
+
+                if !self.is_valid_i(*i) {
+                    continue;
+                }
+
+                let mut counter = 0;
+
+                while counter < scaline_intersections.len() {
+                    let x0: i32 = scaline_intersections[counter].0.ceil() as i32;
+                    let z0: f32 = scaline_intersections[counter].1;
+                    let x1: i32 = scaline_intersections[counter + 1].0.floor() as i32;
+                    let z1: f32 = scaline_intersections[counter + 1].1;
+
+                    let r0: f32 = scaline_intersections[counter].2;
+                    let g0: f32 = scaline_intersections[counter].3;
+                    let b0: f32 = scaline_intersections[counter].4;
+                    let r1: f32 = scaline_intersections[counter + 1].2;
+                    let g1: f32 = scaline_intersections[counter + 1].3;
+                    let b1: f32 = scaline_intersections[counter + 1].4;
+
+                    counter += 2;
+
+                    if x1 < x0 {
+                        continue;
+                    }
+
+                    let dx = (x1 - x0) as f32;
+                    let dz = z1 - z0;
+                    let dr = r1 - r0;
+                    let dg = g1 - g0;
+                    let db = b1 - b0;
+                    let tz = dz / dx;
+                    let tr = dr / dx;
+                    let tg = dg / dx;
+                    let tb = db / dx;
+
+                    let mut z: f32 = z0;
+                    let mut r: f32 = r0;
+                    let mut g: f32 = g0;
+                    let mut b: f32 = b0;
+
+                    for j in x0..=x1 {
+                        if !self.is_valid_j(j) {
+                            continue;
+                        }
+
+                        if self.can_paint(*i, j, z) {
+                            let color = [
+                                r as u8,
+                                g as u8,
+                                b as u8,
+                                255,
+                            ];
+                            self.paint(*i as i32, j as i32, color);
+                            self.set_zbuffer(*i, j, z);
+                        }
+
+                        z += tz;
+                        r += tr;
+                        g += tg;
+                        b += tb;
+                    }
+                }
+            }
+        }
+    }
+
+    fn render_phong(
+        &mut self,
+        object: &mut Object,
+        primary_edge_color: [u8; 4],
+        secondary_edge_color: [u8; 4],
+    ) {
+        self.update_faces(object);
+
+        let vertices_srt: Vec<Vec3> = self.calc_srt_convertions(&object.vertices);
+
+        // Paraleliza o cálculo das normais dos vértices
+        let vertex_normals: Vec<Vec3> = object.vertices
+            .par_iter()
+            .enumerate()
+            .map(|(i, _)| {
+                let mut normal = Vec3::zeros();
+                for face in &object.faces {
+                    if face.vertices.contains(&i) {
+                        normal += face.normal;
+                    }
+                }
+                normal.normalize()
+            })
+            .collect();
+
+        for face in object.faces.iter_mut() {
+            if self.visibility_filter && !face.visible {
+                continue;
+            }
+
+            let intersections = Self::calc_intersections_for_phong(&vertices_srt, &vertex_normals, face);
+
+            for (i, scaline_intersections) in intersections.iter() {
+                if scaline_intersections.len() < 2 {
+                    continue;
+                }
+
+                if !self.is_valid_i(*i) {
+                    continue;
+                }
+
+                let mut counter = 0;
+
+                while counter < scaline_intersections.len() {
+                    let x0: i32 = scaline_intersections[counter].0.ceil() as i32;
+                    let z0: f32 = scaline_intersections[counter].1;
+                    let n0: Vec3 = scaline_intersections[counter].2;
+                    let x1: i32 = scaline_intersections[counter + 1].0.floor() as i32;
+                    let z1: f32 = scaline_intersections[counter + 1].1;
+                    let n1: Vec3 = scaline_intersections[counter + 1].2;
+
+                    counter += 2;
+
+                    if x1 < x0 {
+                        continue;
+                    }
+
+                    let dx = (x1 - x0) as f32;
+                    let dz = z1 - z0;
+                    let dn = n1 - n0;
+                    let tz = dz / dx;
+                    let tn = dn / dx;
+
+                    let mut z: f32 = z0;
+                    let mut n: Vec3 = n0;
+
+                    for j in x0..=x1 {
+                        if !self.is_valid_j(j) {
+                            continue;
+                        }
+
+                        if self.can_paint(*i, j, z) {
+                            //let pixel: Vec3 = Vec3::new(j as f32, *i as f32, z);
+                            //let pixel_sru: Mat4x1 = self.m_srt_sru * vec3_to_mat4x1(&pixel);
+
+                            //let position: Vec3 = mat4x1_to_vec3(&pixel_sru);
+                            let nn: Vec3 = n.normalize();
+
+                            let color = self.calc_color_for_phong(
+                                object.ka,
+                                object.kd,
+                                object.ks,
+                                object.n,
+                                nn,
+                                object.centroid,
+                            );
+
+                            self.paint(*i as i32, j as i32, color);
+                            self.set_zbuffer(*i, j, z);
+                        }
+
+                        z += tz;
+                        n += tn;
+                    }
+                }
+            }
         }
     }
 }
