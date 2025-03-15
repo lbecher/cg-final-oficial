@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::f32::INFINITY;
 use eframe::emath::OrderedFloat;
+use rayon::prelude::*; // Adicionado para paralelismo
 
 use crate::constants::*;
 use crate::object::{Face, Object};
@@ -166,6 +167,7 @@ impl Render {
     }
 
     /// Verifica se o índice i é válido.
+    #[inline(always)]
     fn is_valid_i(
         &self,
         i: i32,
@@ -174,6 +176,7 @@ impl Render {
     }
 
     /// Verifica se o índice j é válido.
+    #[inline(always)]
     fn is_valid_j(
         &self,
         j: i32,
@@ -182,6 +185,7 @@ impl Render {
     }
 
     /// Converte coordenadas SRT para do buffer de imagem.
+    #[inline(always)]
     fn srt_to_buffer(
         &self,
         i: i32,
@@ -197,6 +201,7 @@ impl Render {
     }
 
     /// Seta um Z no ZBuffer.
+    #[inline(always)]
     fn set_zbuffer(
         &mut self,
         i: i32,
@@ -211,6 +216,7 @@ impl Render {
     }
 
     /// Verifica se um pixel pode ser pintado.
+    #[inline(always)]
     fn can_paint(
         &self,
         i: i32,
@@ -225,6 +231,7 @@ impl Render {
     }
 
     /// Pinta um pixel no buffer de imagem.
+    #[inline(always)]
     fn paint(
         &mut self,
         i: i32,
@@ -539,34 +546,35 @@ impl Render {
     }
 
     /// Calcula a cor de preenchimento da face.
+    #[inline(always)]
     fn calc_color(
         &self,
-        ka: &Vec3,
-        kd: &Vec3,
-        ks: &Vec3,
-        n: &f32,
-        nn: &Vec3,
-        position: &Vec3,
+        ka: Vec3,
+        kd: Vec3,
+        ks: Vec3,
+        n: f32,
+        nn: Vec3,
+        position: Vec3,
     ) -> [u8; 4] {
         let mut it: Vec3 = Vec3::zeros();
 
         let ln: Vec3 = (self.light.l - position).normalize();
-        let id_dot = nn.dot(&ln);
+        let cos_theta = nn.dot(&ln);
 
         let sn: Vec3 = (self.camera.vrp - position).normalize();
-        let r: Vec3 = 2.0 * id_dot * sn - ln;
-        let is_dot = r.dot(&sn);
+        let r: Vec3 = 2.0 * cos_theta * sn - ln;
+        let cos_alpha = r.dot(&sn);
 
         for i in 0..3 {
             let ia = self.light.ila[i] * ka[i];
             it[i] += ia;
 
-            if id_dot > 0.0 {
-                let id = self.light.il[i] * kd[i] * id_dot;
+            if cos_theta > 0.0 {
+                let id = self.light.il[i] * kd[i] * cos_theta;
                 it[i] += id;
 
-                if is_dot > 0.0 {
-                    let is = self.light.il[i] * ks[i] * is_dot.powf(*n);
+                if cos_alpha > 0.0 {
+                    let is = self.light.il[i] * ks[i] * cos_alpha.powf(n);
                     it[i] += is;
                 };
             }
@@ -582,34 +590,35 @@ impl Render {
     }
 
     /// Calcula a cor de preenchimento da face para Phong.
+    #[inline(always)]
     fn calc_color_for_phong(
         &self,
-        ka: &Vec3,
-        kd: &Vec3,
-        ks: &Vec3,
-        n: &f32,
-        nn: &Vec3,
-        position: &Vec3,
+        ka: Vec3,
+        kd: Vec3,
+        ks: Vec3,
+        n: f32,
+        nn: Vec3,
+        position: Vec3,
     ) -> [u8; 4] {
         let mut it: Vec3 = Vec3::zeros();
 
         let ln: Vec3 = (self.light.l - position).normalize();
-        let id_dot = nn.dot(&ln);
+        let cos_theta = nn.dot(&ln);
 
         let sn: Vec3 = (self.camera.vrp - position).normalize();
         let hn: Vec3 = (ln + sn).normalize();
-        let is_dot = nn.dot(&hn);
+        let cos_alpha = nn.dot(&hn);
 
         for i in 0..3 {
             let ia = self.light.ila[i] * ka[i];
             it[i] += ia;
 
-            if id_dot > 0.0 {
-                let id = self.light.il[i] * kd[i] * id_dot;
+            if cos_theta > 0.0 {
+                let id = self.light.il[i] * kd[i] * cos_theta;
                 it[i] += id;
 
-                if is_dot > 0.0 {
-                    let is = self.light.il[i] * ks[i] * is_dot.powf(*n);
+                if cos_alpha > 0.0 {
+                    let is = self.light.il[i] * ks[i] * cos_alpha.powf(n);
                     it[i] += is;
                 };
             }
@@ -724,11 +733,6 @@ impl Render {
     ) {
         self.update_faces(object);
 
-        let ka: Vec3 = object.ka;
-        let kd: Vec3 = object.kd;
-        let ks: Vec3 = object.ks;
-        let n: f32 = object.n;
-
         let vertices_srt = self.calc_srt_convertions(&object.vertices);
 
         for face in object.faces.iter_mut() {
@@ -736,7 +740,14 @@ impl Render {
                 continue;
             }
 
-            let color = self.calc_color(&ka, &kd, &ks, &n, &face.normal, &face.centroid);
+            let color = self.calc_color(
+                object.ka,
+                object.kd,
+                object.ks,
+                object.n,
+                face.normal,
+                face.centroid,
+            );
 
             let intersections = Self::calc_intersections(&vertices_srt, face);
 
@@ -795,32 +806,31 @@ impl Render {
     ) {
         self.update_faces(object);
 
-        let ka: Vec3 = object.ka;
-        let kd: Vec3 = object.kd;
-        let ks: Vec3 = object.ks;
-        let n: f32 = object.n;
+        let vertices_srt: Vec<Vec3> = self.calc_srt_convertions(&object.vertices);
 
-        let vertices_srt = self.calc_srt_convertions(&object.vertices);
-
-        let mut vertex_intensities = vec![Vec3::zeros(); object.vertices.len()];
-        for (i, vertex) in object.vertices.iter().enumerate() {
-            let mut normal = Vec3::zeros();
-            let mut count = 0;
-
-            for face in &object.faces {
-                if face.vertices.contains(&i) {
-                    normal += face.normal;
-                    count += 1;
+        // Paraleliza o cálculo das intensidades dos vértices
+        let vertex_intensities: Vec<Vec3> = object.vertices
+            .par_iter()
+            .enumerate()
+            .map(|(i, vertex)| {
+                let mut normal: Vec3 = Vec3::zeros();
+                for face in &object.faces {
+                    if face.vertices.contains(&i) {
+                        normal += face.normal;
+                    }
                 }
-            }
-
-            if count > 0 {
                 normal = normal.normalize();
-            }
-
-            let color = self.calc_color(&ka, &kd, &ks, &n, &normal, vertex);
-            vertex_intensities[i] = Vec3::new(color[0] as f32, color[1] as f32, color[2] as f32);
-        }
+                let color = self.calc_color(
+                    object.ka,
+                    object.kd,
+                    object.ks,
+                    object.n,
+                    normal,
+                    *vertex,
+                );
+                Vec3::new(color[0] as f32, color[1] as f32, color[2] as f32)
+            })
+            .collect();
 
         for face in object.faces.iter_mut() {
             if self.visibility_filter && !face.visible {
@@ -906,22 +916,22 @@ impl Render {
     ) {
         self.update_faces(object);
 
-        let ka: Vec3 = object.ka;
-        let kd: Vec3 = object.kd;
-        let ks: Vec3 = object.ks;
+        let vertices_srt: Vec<Vec3> = self.calc_srt_convertions(&object.vertices);
 
-        let vertices_srt = self.calc_srt_convertions(&object.vertices);
-
-        let mut vertex_normals: Vec<Vec3> = Vec::new();
-        for i in 0..object.vertices.len() {
-            let mut normal = Vec3::zeros();
-            for face in &object.faces {
-                if face.vertices.contains(&i) {
-                    normal += face.normal;
+        // Paraleliza o cálculo das normais dos vértices
+        let vertex_normals: Vec<Vec3> = object.vertices
+            .par_iter()
+            .enumerate()
+            .map(|(i, _)| {
+                let mut normal = Vec3::zeros();
+                for face in &object.faces {
+                    if face.vertices.contains(&i) {
+                        normal += face.normal;
+                    }
                 }
-            }
-            vertex_normals.push(normal.normalize());
-        }
+                normal.normalize()
+            })
+            .collect();
 
         for face in object.faces.iter_mut() {
             if self.visibility_filter && !face.visible {
@@ -976,7 +986,15 @@ impl Render {
                             //let position: Vec3 = mat4x1_to_vec3(&pixel_sru);
                             let nn: Vec3 = n.normalize();
 
-                            let color = self.calc_color_for_phong(&ka, &kd, &ks, &object.n, &nn, &object.centroid);
+                            let color = self.calc_color_for_phong(
+                                object.ka,
+                                object.kd,
+                                object.ks,
+                                object.n,
+                                nn,
+                                object.centroid,
+                            );
+
                             self.paint(*i as i32, j as i32, color);
                             self.set_zbuffer(*i, j, z);
                         }
