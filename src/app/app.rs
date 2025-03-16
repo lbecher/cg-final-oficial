@@ -69,13 +69,14 @@ pub struct App {
     show_control_points: bool,
 
     window_xmin: String,
-    window_xmin_value: f32,
     window_xmax: String,
-    window_xmax_value: f32,
     window_ymin: String,
-    window_ymin_value: f32,
     window_ymax: String,
-    window_ymax_value: f32,
+
+    viewport_umin: String,
+    viewport_umax: String,
+    viewport_vmin: String,
+    viewport_vmax: String,
 
     closed: bool,
     show_info: bool,
@@ -168,14 +169,15 @@ impl Default for App {
             rotation: VectorInputData::new(0.0, 0.0, 0.0),
             rotation_value: Vec3::new(0.0, 0.0, 0.0),
 
-            window_xmin_value: render.window.xmin,
             window_xmin: format!("Xmin: {}", render.window.xmin),
-            window_xmax_value: render.window.xmax,
             window_xmax: format!("Xmax: {}", render.window.xmax),
-            window_ymin_value: render.window.ymin,
             window_ymin: format!("Ymin: {}", render.window.ymin),
-            window_ymax_value: render.window.ymax,
             window_ymax: format!("Ymax: {}", render.window.ymax),
+
+            viewport_umin: format!("Umin: {}", render.viewport.umin),
+            viewport_umax: format!("Umax: {}", render.viewport.umax),
+            viewport_vmin: format!("Vmin: {}", render.viewport.vmin),
+            viewport_vmax: format!("Vmax: {}", render.viewport.vmax),
 
             render,
             image,
@@ -303,7 +305,6 @@ impl App {
             ui.color_edit_button_srgba_unmultiplied(&mut self.secondary_color);
         });
 
-        //ui.heading("Aplicar Cores");
         if ui.button("Aplicar Cores").clicked() {
             self.redraw();
         }
@@ -491,7 +492,7 @@ impl App {
                 redraw = true;
             }
         });
-        ui.collapsing("Janela de visualização", |ui| {
+        ui.collapsing("Janela", |ui| {
             ui.add(TextEdit::singleline(&mut self.window_xmin)
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
             ui.add(TextEdit::singleline(&mut self.window_xmax)
@@ -505,6 +506,24 @@ impl App {
                 parse_input("Xmax:", &mut self.render.window.xmax, &mut self.window_xmax);
                 parse_input("Ymin:", &mut self.render.window.ymin, &mut self.window_ymin);
                 parse_input("Ymax:", &mut self.render.window.ymax, &mut self.window_ymax);
+                redraw = true;
+            }
+        });
+        ui.collapsing("Viewport", |ui| {
+            ui.add(TextEdit::singleline(&mut self.viewport_umin)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.viewport_umax)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.viewport_vmin)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.viewport_vmax)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            if ui.button("Aplicar").clicked() {
+                parse_input("Umin:", &mut self.render.viewport.umin, &mut self.viewport_umin);
+                parse_input("Umax:", &mut self.render.viewport.umax, &mut self.viewport_umax);
+                parse_input("Vmin:", &mut self.render.viewport.vmin, &mut self.viewport_vmin);
+                parse_input("Vmax:", &mut self.render.viewport.vmax, &mut self.viewport_vmax);
+                self.render.calc_sru_src_matrix();
                 redraw = true;
             }
         });
@@ -589,41 +608,41 @@ impl App {
             });
             ui.horizontal(|ui| {
                 if ui.button("Transladar +X").clicked() {
-                    self.objects[idx].translate(&Vec3::new(10.0, 0.0, 0.0));
+                    self.objects[idx].translate(&Vec3::new(1.0, 0.0, 0.0));
                     self.redraw();
                 }
                 if ui.button("Transladar -X").clicked() {
-                    self.objects[idx].translate(&Vec3::new(-10.0, 0.0, 0.0));
+                    self.objects[idx].translate(&Vec3::new(-1.0, 0.0, 0.0));
                     self.redraw();
                 }
             });
             ui.horizontal(|ui| {
                 if ui.button("Transladar +Y").clicked() {
-                    self.objects[idx].translate(&Vec3::new(0.0, 10.0, 0.0));
+                    self.objects[idx].translate(&Vec3::new(0.0, 1.0, 0.0));
                     self.redraw();
                 }
                 if ui.button("Transladar -Y").clicked() {
-                    self.objects[idx].translate(& Vec3::new(0.0, -10.0, 0.0));
+                    self.objects[idx].translate(& Vec3::new(0.0, -1.0, 0.0));
                     self.redraw();
                 }
             });
             ui.horizontal(|ui| {
                 if ui.button("Transladar +Z").clicked() {
-                    self.objects[idx].translate(&Vec3::new(0.0, 0.0, 10.0));
+                    self.objects[idx].translate(&Vec3::new(0.0, 0.0, 1.0));
                     self.redraw();
                 }
                 if ui.button("Transladar -Z").clicked() {
-                    self.objects[idx].translate(&Vec3::new(0.0, 0.0, -10.0));
+                    self.objects[idx].translate(&Vec3::new(0.0, 0.0, -1.0));
                     self.redraw();
                 }
             });
             ui.horizontal(|ui| {
                 if ui.button("Escalar +").clicked() {
-                    self.objects[idx].scale(1.1);
+                    self.objects[idx].scale(1.05);
                     self.redraw();
                 }
                 if ui.button("Escalar -").clicked() {
-                    self.objects[idx].scale(0.9);
+                    self.objects[idx].scale(0.95);
                     self.redraw();
                 }
             });
@@ -664,7 +683,8 @@ impl App {
                 let mut shapes = Vec::new();
 
                 for (i, control_point) in control_points_srt.iter().enumerate() {
-                    let point = pos2(control_point.x, control_point.y);
+                    let (y, x) = self.render.srt_to_buffer(control_point.y as i32, control_point.x as i32);
+                    let point = pos2(x as f32, y as f32);
                     let size = Vec2::splat(2.0 * control_point_radius);
 
                     let point_in_screen = to_screen.transform_pos(point);

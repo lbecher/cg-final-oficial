@@ -184,8 +184,8 @@ impl Render {
     }
 
     /// Converte coordenadas SRT para do buffer de imagem.
-    /*#[inline(always)]
-    fn srt_to_buffer(
+    #[inline(always)]
+    pub fn srt_to_buffer(
         &self,
         i: i32,
         j: i32,
@@ -197,7 +197,23 @@ impl Render {
         let x = (nj * (self.buffer_width as f32 - 1.0)).round() as i32;
 
         (y, x)
-    }*/
+    }
+
+    /// Converte coordenadas de buffer para SRT.
+    #[inline(always)]
+    pub fn buffer_to_srt(
+        &self,
+        i: i32,
+        j: i32,
+    ) -> (i32, i32) {
+        let ni = i as f32 / (self.buffer_height as f32 - 1.0);
+        let nj = j as f32 / (self.buffer_width as f32 - 1.0);
+
+        let y = ni * (self.viewport.vmax - self.viewport.vmin) + self.viewport.vmin;
+        let x = nj * (self.viewport.umax - self.viewport.umin) + self.viewport.umin;
+
+        (y as i32, x as i32)
+    }
 
     /// Seta um Z no ZBuffer.
     #[inline(always)]
@@ -207,7 +223,7 @@ impl Render {
         j: i32,
         z: f32,
     ) {
-        //let (i, j) = self.srt_to_buffer(i, j);
+        let (i, j) = self.srt_to_buffer(i, j);
         let j: usize = j as usize;
         let i: usize = i as usize;
         let index = i * self.buffer_width + j;
@@ -222,7 +238,7 @@ impl Render {
         j: i32,
         z: f32,
     ) -> bool {
-        //let (i, j) = self.srt_to_buffer(i, j);
+        let (i, j) = self.srt_to_buffer(i, j);
         let j = j as usize;
         let i = i as usize;
         let index = i * self.buffer_width + j;
@@ -237,7 +253,7 @@ impl Render {
         j: i32,
         color: [u8; 4],
     ) {
-        //let (i, j) = self.srt_to_buffer(i, j);
+        let (i, j) = self.srt_to_buffer(i, j);
         let j = j as usize;
         let i = i as usize;
         //if (x >= self.buffer_width) || (y >= self.buffer_height) {
