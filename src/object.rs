@@ -593,11 +593,4 @@ impl Object {
             *control_points = new_control_points;
         }
     }
-
-    /// Calcula as normais das faces.
-    pub fn calc_normals(&mut self) {
-        for face in &mut self.faces {
-            face.calc_normal(&self.vertices);
-        }
-    }
 }

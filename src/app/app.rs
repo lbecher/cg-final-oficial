@@ -519,10 +519,26 @@ impl App {
             ui.add(TextEdit::singleline(&mut self.viewport_vmax)
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
             if ui.button("Aplicar").clicked() {
+                let umin = self.render.viewport.umin;
+                let umax = self.render.viewport.umax;
+                let vmin = self.render.viewport.vmin;
+                let vmax = self.render.viewport.vmax;
                 parse_input("Umin:", &mut self.render.viewport.umin, &mut self.viewport_umin);
                 parse_input("Umax:", &mut self.render.viewport.umax, &mut self.viewport_umax);
                 parse_input("Vmin:", &mut self.render.viewport.vmin, &mut self.viewport_vmin);
                 parse_input("Vmax:", &mut self.render.viewport.vmax, &mut self.viewport_vmax);
+                if self.render.viewport.umax - self.render.viewport.umin < GUI_VIEWPORT_WIDTH - 1.0 {
+                    self.viewport_umax = "Umax: Inválido!".to_string();
+                    self.viewport_umin = "Umin: Inválido!".to_string();
+                    self.render.viewport.umin = umin;
+                    self.render.viewport.umax = umax;
+                }
+                if self.render.viewport.vmax - self.render.viewport.vmin < GUI_VIEWPORT_HEIGHT - 1.0 {
+                    self.viewport_vmax = "Vmax: Inválido!".to_string();
+                    self.viewport_vmin = "Vmin: Inválido!".to_string();
+                    self.render.viewport.vmin = vmin;
+                    self.render.viewport.vmax = vmax;
+                }
                 self.render.calc_sru_src_matrix();
                 redraw = true;
             }
