@@ -190,7 +190,7 @@ impl Object {
 
     fn gen_closed_control_points(ni: u8, nj: u8) -> Vec<Vec3> {
         let mut control_points: Vec<Vec3> = Vec::with_capacity((ni as usize + 1) * (nj as usize + 1));
-        let step_i = -8.0 * std::f32::consts::PI / (ni as f32 + 1.0);
+        let step_i = 8.0 * std::f32::consts::PI / (ni as f32 + 1.0);
         let step_j = 4.0 / nj as f32;
         for i in 0..=ni {
             for j in 0..=nj {
