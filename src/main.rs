@@ -3,7 +3,6 @@ mod constants;
 mod object;
 mod render;
 mod types;
-mod utils;
 
 use constants::*;
 use eframe::{NativeOptions, Result, run_native};
