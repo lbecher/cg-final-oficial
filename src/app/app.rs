@@ -509,7 +509,7 @@ impl App {
                 redraw = true;
             }
         });
-        ui.collapsing("Viewport", |ui| {
+        ui.collapsing("Porta de visão", |ui| {
             ui.add(TextEdit::singleline(&mut self.viewport_umin)
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
             ui.add(TextEdit::singleline(&mut self.viewport_umax)
