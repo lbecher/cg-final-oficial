@@ -332,8 +332,7 @@ impl App {
 
         if ui.button("Criar novo objeto").clicked() {
             if self.parse_object_props() {
-                let mut new_object = Object::new(self.ni_value, self.nj_value, self.resi_value, self.resj_value, self.smoothness_value, self.ka_value, self.kd_value, self.ks_value, self.n_value, self.cylinder);
-                new_object.scale(100.0);
+                let new_object = Object::new(self.ni_value, self.nj_value, self.resi_value, self.resj_value, self.smoothness_value, self.ka_value, self.kd_value, self.ks_value, self.n_value, self.cylinder);
                 self.objects.push(new_object);
                 self.selected_object = Some(self.objects.len() - 1);
                 redraw = true;
@@ -411,7 +410,7 @@ impl App {
         });
 
         ui.separator();
-        ui.heading(" Lista de Objetos");
+        ui.heading("Lista de Objetos");
         if self.objects.is_empty() {
             ui.label("Nenhum objeto criado");
         }
@@ -420,7 +419,7 @@ impl App {
                 self.selected_object = Some(i);
             }
         }
-        
+
         if ui.button("Limpar seleção").clicked() {
             self.selected_object = None;
         }
@@ -656,9 +655,9 @@ impl App {
                     let point_response = ui.interact(point_rect, point_id, Sense::drag());
 
                     if point_response.dragged() {
-                        //deslocamento do mouse
+                        // Deslocamento do mouse
                         let drag_delta: Vec2 = point_response.drag_delta();
-                        let drag_delta_sru: Mat4x1 = m_srt_sru * Mat4x1::new(drag_delta.x, -drag_delta.y, 0.0, 0.0);
+                        let drag_delta_sru: Mat4x1 = m_srt_sru * Mat4x1::new(drag_delta.x, drag_delta.y, 0.0, 0.0);
                         control_points[i] += mat4x1_to_vec3(&drag_delta_sru);
 
                         dragged = true;

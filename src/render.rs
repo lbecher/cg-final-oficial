@@ -7,7 +7,6 @@ use crate::constants::*;
 use crate::object::{Face, Object};
 use crate::types::*;
 
-
 #[derive(Clone, PartialEq)]
 pub enum ShaderType {
     Wireframe,
@@ -66,10 +65,10 @@ impl Default for Render {
             y: Vec3::new(0.0, 1.0, 0.0),
         };
         let window = Window {
-            xmin: -GUI_VIEWPORT_WIDTH / 2.0,
-            xmax: GUI_VIEWPORT_WIDTH / 2.0,
-            ymin: -GUI_VIEWPORT_HEIGHT / 2.0,
-            ymax: GUI_VIEWPORT_HEIGHT / 2.0,
+            xmin: -8.0,
+            xmax: 8.0,
+            ymin: -6.0,
+            ymax: 6.0,
         };
         let viewport = Viewport {
             umin: 0.0,
@@ -208,10 +207,9 @@ impl Render {
         j: i32,
         z: f32,
     ) {
-       //let (y, x) = self.srt_to_buffer(i, j);
+        //let (i, j) = self.srt_to_buffer(i, j);
         let j: usize = j as usize;
         let i: usize = i as usize;
-        
         let index = i * self.buffer_width + j;
         self.zbuffer[index] = z;
     }
@@ -224,7 +222,7 @@ impl Render {
         j: i32,
         z: f32,
     ) -> bool {
-        //let (y, x) = self.srt_to_buffer(i, j);
+        //let (i, j) = self.srt_to_buffer(i, j);
         let j = j as usize;
         let i = i as usize;
         let index = i * self.buffer_width + j;
@@ -239,14 +237,12 @@ impl Render {
         j: i32,
         color: [u8; 4],
     ) {
-        //let (y, x) = self.srt_to_buffer(i, j);
+        //let (i, j) = self.srt_to_buffer(i, j);
         let j = j as usize;
         let i = i as usize;
-
         //if (x >= self.buffer_width) || (y >= self.buffer_height) {
         //    return;
         //}
-
         let index = (i * self.buffer_width + j) * 4;
         self.buffer[index]     = color[0];
         self.buffer[index + 1] = color[1];
@@ -255,6 +251,7 @@ impl Render {
     }
 
     /// Atualiza as faces da malha.
+    #[inline(always)]
     fn update_faces(
         &self,
         object: &mut Object
@@ -268,6 +265,7 @@ impl Render {
     }
 
     /// Calcula o teste de visibilidade das arestas da malha.
+    #[inline(always)]
     fn calc_visibility(
         &self,
         face: &mut Face,
@@ -319,7 +317,7 @@ impl Render {
     /// Calcula a matriz de transformação de coordenadas em SRU para SRT (matriz concatenada).
     fn calc_sru_srt_matrix(&mut self) {
         self.m_sru_srt = self.calc_jp_matrix() * self.calc_proj_matrix() * self.calc_sru_src_matrix();
-        self.m_srt_sru = (self.calc_proj_matrix() * self.calc_sru_src_matrix()).try_inverse().unwrap_or_else(Mat4::identity);
+        self.m_srt_sru = self.m_sru_srt.try_inverse().unwrap_or_else(Mat4::identity);
     }
 
     /// Converte os pontos para o sistema de referência da tela.
@@ -555,14 +553,13 @@ impl Render {
         ks: Vec3,
         n: f32,
         nn: Vec3,
-        position: Vec3,
+        sn: Vec3,
+        ln: Vec3,
     ) -> [u8; 4] {
         let mut it: Vec3 = Vec3::zeros();
 
-        let ln: Vec3 = (self.light.l - position).normalize();
         let cos_theta = nn.dot(&ln);
 
-        let sn: Vec3 = (self.camera.vrp - position).normalize();
         let r: Vec3 = 2.0 * cos_theta * sn - ln;
         let cos_alpha = r.dot(&sn);
 
@@ -599,14 +596,13 @@ impl Render {
         ks: Vec3,
         n: f32,
         nn: Vec3,
-        position: Vec3,
+        sn: Vec3,
+        ln: Vec3,
     ) -> [u8; 4] {
         let mut it: Vec3 = Vec3::zeros();
 
-        let ln: Vec3 = (self.light.l - position).normalize();
         let cos_theta = nn.dot(&ln);
 
-        let sn: Vec3 = (self.camera.vrp - position).normalize();
         let hn: Vec3 = (ln + sn).normalize();
         let cos_alpha = nn.dot(&hn);
 
@@ -646,13 +642,13 @@ impl Render {
                 self.render_wireframe(object, primary_edge_color, secondary_edge_color);
             }
             ShaderType::Flat => {
-                self.render_flat(object, primary_edge_color, secondary_edge_color);
+                self.render_flat(object);
             }
             ShaderType::Gouraud => {
-                self.render_gouraud(object, primary_edge_color, secondary_edge_color);
+                self.render_gouraud(object);
             }
             ShaderType::Phong => {
-                self.render_phong(object, primary_edge_color, secondary_edge_color);
+                self.render_phong(object);
             }
         }
     }
@@ -731,8 +727,6 @@ impl Render {
     fn render_flat(
         &mut self,
         object: &mut Object,
-        primary_edge_color: [u8; 4],
-        secondary_edge_color: [u8; 4],
     ) {
         self.update_faces(object);
 
@@ -743,13 +737,17 @@ impl Render {
                 continue;
             }
 
+            let nn: Vec3 = face.normal;
+            let ln: Vec3 = (self.light.l - face.centroid).normalize();
+            let sn: Vec3 = (self.camera.vrp - face.centroid).normalize();
             let color = self.calc_color(
                 object.ka,
                 object.kd,
                 object.ks,
                 object.n,
-                face.normal,
-                face.centroid,
+                nn,
+                sn,
+                ln,
             );
 
             let intersections = Self::calc_intersections(&vertices_srt, face);
@@ -806,8 +804,6 @@ impl Render {
     fn render_gouraud(
         &mut self,
         object: &mut Object,
-        primary_edge_color: [u8; 4],
-        secondary_edge_color: [u8; 4],
     ) {
         self.update_faces(object);
 
@@ -824,15 +820,20 @@ impl Render {
                         normal += face.normal;
                     }
                 }
-                normal = normal.normalize();
+
+                let nn: Vec3 = normal.normalize();
+                let ln: Vec3 = (self.light.l - vertex).normalize();
+                let sn: Vec3 = (self.camera.vrp - vertex).normalize();
                 let color = self.calc_color(
                     object.ka,
                     object.kd,
                     object.ks,
                     object.n,
-                    normal,
-                    *vertex,
+                    nn,
+                    sn,
+                    ln,
                 );
+
                 Vec3::new(color[0] as f32, color[1] as f32, color[2] as f32)
             })
             .collect();
@@ -918,10 +919,11 @@ impl Render {
     fn render_phong(
         &mut self,
         object: &mut Object,
-        primary_edge_color: [u8; 4],
-        secondary_edge_color: [u8; 4],
     ) {
         self.update_faces(object);
+
+        let ln: Vec3 = (self.light.l - object.centroid).normalize();
+        let sn: Vec3 = (self.camera.vrp - object.centroid).normalize();
 
         let vertices_srt: Vec<Vec3> = self.calc_srt_convertions(&object.vertices);
 
@@ -944,6 +946,9 @@ impl Render {
             if self.visibility_filter && !face.visible {
                 continue;
             }
+
+            //let ln: Vec3 = (self.light.l - face.centroid).normalize();
+            //let sn: Vec3 = (self.camera.vrp - face.centroid).normalize();
 
             let intersections = Self::calc_intersections_for_phong(&vertices_srt, &vertex_normals, face);
 
@@ -987,10 +992,6 @@ impl Render {
                         }
 
                         if self.can_paint(*i, j, z) {
-                            //let pixel: Vec3 = Vec3::new(j as f32, *i as f32, z);
-                            //let pixel_sru: Mat4x1 = self.m_srt_sru * vec3_to_mat4x1(&pixel);
-
-                            //let position: Vec3 = mat4x1_to_vec3(&pixel_sru);
                             let nn: Vec3 = n.normalize();
 
                             let color = self.calc_color_for_phong(
@@ -999,7 +1000,8 @@ impl Render {
                                 object.ks,
                                 object.n,
                                 nn,
-                                object.centroid,
+                                sn,
+                                ln,
                             );
 
                             self.paint(*i as i32, j as i32, color);
