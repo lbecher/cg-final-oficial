@@ -1,6 +1,5 @@
 use rand::Rng;
 use serde::{Serialize, Deserialize};
-use std::sync::Arc;
 use crate::constants::*;
 use crate::types::*;
 use rayon::prelude::*;
@@ -47,13 +46,17 @@ impl Face {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Object {
     /// Quantidades de pontos de controle na direção i.
-    ni: usize,
+    ni: u8,
     /// Quantidades de pontos de controle na direção j.
-    nj: usize,
+    nj: u8,
+    /// Grau do polinômio interpolador na direção i.
+    ti: u8,
+    /// Grau do polinômio interpolador na direção j.
+    tj: u8,
     /// Resolução na direção i.
-    resi: usize,
+    resi: u8,
     /// Resolução na direção j.
-    resj: usize,
+    resj: u8,
     /// Nós (knots) na direção i.
     knots_i: Vec<f32>,
     /// Nós (knots) na direção j.
@@ -79,10 +82,12 @@ pub struct Object {
 
 impl Object {
     pub fn new(
-        ni: usize,
-        nj: usize,
-        resi: usize,
-        resj: usize,
+        ni: u8,
+        nj: u8,
+        ti: u8,
+        tj: u8,
+        resi: u8,
+        resj: u8,
         smoothing_iterations: u8,
         ka: Vec3,
         kd: Vec3,
@@ -96,15 +101,17 @@ impl Object {
             Self::gen_closed_control_points(ni, nj)
         };
 
-        let knots_i: Vec<f32> = Self::spline_knots(ni, TI);
-        let knots_j: Vec<f32> = Self::spline_knots(nj, TJ);
+        let knots_i: Vec<f32> = Self::spline_knots(ni as usize, ti as usize);
+        let knots_j: Vec<f32> = Self::spline_knots(nj as usize, tj as usize);
 
-        let vertices: Vec<Vec3> = Vec::with_capacity(resi * resj);
-        let faces: Vec<Face> = Vec::with_capacity((resi - 1) * (resj - 1));
+        let vertices: Vec<Vec3> = Vec::with_capacity(resi as usize * resj as usize);
+        let faces: Vec<Face> = Vec::with_capacity((resi as usize - 1) * (resj as usize - 1));
 
         let mut obj = Self {
             ni,
             nj,
+            ti,
+            tj,
             resi,
             resj,
             knots_i,
@@ -131,25 +138,21 @@ impl Object {
         obj
     }
 
-    pub fn set_ni_nj(&mut self, ni: usize, nj: usize, smoothing_iterations: u8) {
+    pub fn set_ni_nj_ti_tj(&mut self, ni: u8, nj: u8, ti: u8, tj: u8, smoothing_iterations: u8) {
         self.ni = ni;
         self.nj = nj;
 
-        self.knots_i = Self::spline_knots(ni, TI);
-        self.knots_j = Self::spline_knots(nj, TJ);
+        self.knots_i = Self::spline_knots(ni as usize, ti as usize);
+        self.knots_j = Self::spline_knots(nj as usize, tj as usize);
 
-        self.control_points = Self::gen_control_points(self.ni, self.nj, smoothing_iterations);
+        self.control_points = Self::gen_control_points(ni, nj, smoothing_iterations);
 
         self.calc_mesh();
         self.calc_edges_and_faces();
         self.calc_centroid();
     }
 
-    pub fn get_ni_nj(&self) -> (usize, usize) {
-        (self.ni, self.nj)
-    }
-
-    pub fn set_resi_resj(&mut self, resi: usize, resj: usize) {
+    pub fn set_resi_resj(&mut self, resi: u8, resj: u8) {
         self.resi = resi;
         self.resj = resj;
 
@@ -158,23 +161,19 @@ impl Object {
         self.calc_centroid();
     }
 
-    pub fn get_resi_resj(&self) -> (usize, usize) {
-        (self.resi, self.resj)
-    }
-
     //--------------------------------------------------------------------------------
     // Geração da superfície
     //--------------------------------------------------------------------------------
 
-    fn gen_control_points(ni: usize, nj: usize, smoothing_iterations: u8) -> Vec<Vec3> {
+    fn gen_control_points(ni: u8, nj: u8, smoothing_iterations: u8) -> Vec<Vec3> {
         let mut rng = rand::thread_rng();
-        let mut control_points: Vec<Vec3> = Vec::with_capacity((ni + 1) * (nj + 1));
+        let mut control_points: Vec<Vec3> = Vec::with_capacity((ni as usize + 1) * (nj as usize + 1));
         let ti = 4.0 / ni as f32;
         let tj = 4.0 / nj as f32;
-        let mut i = 0.0;
-        let mut j = 0.0;
+        let mut i = ni as f32 / -2.0;
+        let mut j;
         for _ in 0..=ni {
-            j = 0.0;
+            j = nj as f32 / -2.0;
             for _ in 0..=nj {
                 control_points.push(Vec3::new(
                     i,
@@ -189,10 +188,9 @@ impl Object {
         control_points
     }
 
-    /// Renomeada para representar objeto fechado
-    fn gen_closed_control_points(ni: usize, nj: usize) -> Vec<Vec3> {
-        let mut control_points: Vec<Vec3> = Vec::with_capacity((ni + 1) * (nj + 1));
-        let step_i = -8.0 * std::f32::consts::PI / (ni + 1)  as f32;
+    fn gen_closed_control_points(ni: u8, nj: u8) -> Vec<Vec3> {
+        let mut control_points: Vec<Vec3> = Vec::with_capacity((ni as usize + 1) * (nj as usize + 1));
+        let step_i = -8.0 * std::f32::consts::PI / (ni as f32 + 1.0);
         let step_j = 4.0 / nj as f32;
         for i in 0..=ni {
             for j in 0..=nj {
@@ -260,14 +258,16 @@ impl Object {
 
     /// Gera a malha da superfície.
     pub fn calc_mesh(&mut self) {
-        let ni = self.ni;
-        let nj = self.nj;
-        let resi = self.resi;
-        let resj = self.resj;
+        let ni = self.ni as usize;
+        let nj = self.nj as usize;
+        let ti = self.ti as usize;
+        let tj = self.tj as usize;
+        let resi = self.resi as usize;
+        let resj = self.resj as usize;
 
         // 1) Pré-computar as funções de base para as duas direções
-        let basis_i = Self::compute_basis(&self.knots_i, ni, resi, TI);
-        let basis_j = Self::compute_basis(&self.knots_j, nj, resj, TJ);
+        let basis_i = Self::compute_basis(&self.knots_i, ni, resi, ti);
+        let basis_j = Self::compute_basis(&self.knots_j, nj, resj, tj);
 
         // 2) Calcular os vértices em paralelo usando Rayon
         let cps = self.control_points.clone();
@@ -300,14 +300,16 @@ impl Object {
 
     /// Gera as faces triangulares da malha.
     fn calc_edges_and_faces_tri(&mut self) {
-        let i_max = if self.closed { self.resi } else { self.resi - 1 };
+        let resi = self.resi as usize;
+        let resj = self.resj as usize;
+        let i_max = if self.closed { resi } else { resi - 1 };
         for i in 0..i_max {
-            let next_i = if self.closed { (i + 1) % self.resi } else { i + 1 };
-            for j in 0..self.resj - 1 {
-                let a_index = next_i * self.resj + j;
-                let b_index = next_i * self.resj + (j + 1);
-                let c_index = i * self.resj + (j + 1);
-                let d_index = i * self.resj + j;
+            let next_i = if self.closed { (i + 1) % resi } else { i + 1 };
+            for j in 0..resj - 1 {
+                let a_index = next_i * resj + j;
+                let b_index = next_i * resj + (j + 1);
+                let c_index = i * resj + (j + 1);
+                let d_index = i * resj + j;
 
                 let abc_face = Face {
                     vertices: vec![a_index, b_index, c_index, a_index],
@@ -331,14 +333,16 @@ impl Object {
     }
 
     fn calc_edges_and_faces_quad(&mut self) {
-        let i_max = if self.closed { self.resi } else { self.resi - 1 };
+        let resi = self.resi as usize;
+        let resj = self.resj as usize;
+        let i_max = if self.closed { resi } else { resi - 1 };
         for i in 0..i_max {
-            let next_i = if self.closed { (i + 1) % self.resi } else { i + 1 };
-            for j in 0..self.resj - 1 {
-                let a_index = next_i * self.resj + j;
-                let b_index = next_i * self.resj + (j + 1);
-                let c_index = i * self.resj + (j + 1);
-                let d_index = i * self.resj + j;
+            let next_i = if self.closed { (i + 1) % resi } else { i + 1 };
+            for j in 0..resj - 1 {
+                let a_index = next_i * resj + j;
+                let b_index = next_i * resj + (j + 1);
+                let c_index = i * resj + (j + 1);
+                let d_index = i * resj + j;
 
                 let face = Face {
                     vertices: vec![a_index, b_index, c_index, d_index, a_index],
@@ -563,9 +567,11 @@ impl Object {
     fn smooth_control_points(
         control_points: &mut Vec<Vec3>,
         smoothing_iterations: u8,
-        ni: usize,
-        nj: usize,
+        ni: u8,
+        nj: u8,
     ) {
+        let ni = ni as usize;
+        let nj = nj as usize;
         for _ in 0..smoothing_iterations {
             let mut new_control_points: Vec<Vec3> = control_points.clone();
 

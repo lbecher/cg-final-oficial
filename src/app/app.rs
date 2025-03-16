@@ -36,13 +36,17 @@ pub struct App {
     theme: Theme,
 
     ni: String,
-    ni_value: usize,
+    ni_value: u8,
     nj: String,
-    nj_value: usize,
+    nj_value: u8,
+    ti: String,
+    ti_value: u8,
+    tj: String,
+    tj_value: u8,
     resi: String,
-    resi_value: usize,
+    resi_value: u8,
     resj: String,
-    resj_value: usize,
+    resj_value: u8,
     smoothness: String,
     smoothness_value: u8,
 
@@ -64,13 +68,17 @@ pub struct App {
 
     show_control_points: bool,
 
-    cylinder: bool,
-    show_info: bool,
+    window_xmin: String,
+    window_xmin_value: f32,
+    window_xmax: String,
+    window_xmax_value: f32,
+    window_ymin: String,
+    window_ymin_value: f32,
+    window_ymax: String,
+    window_ymax_value: f32,
 
-    viewport_width: String,
-    viewport_width_value: usize,
-    viewport_height: String,
-    viewport_height_value: usize,
+    closed: bool,
+    show_info: bool,
 }
 
 impl Default for App {
@@ -95,20 +103,19 @@ impl Default for App {
 
         let ni_value = 4;
         let nj_value = 4;
+        let ti_value = 3;
+        let tj_value = 3;
         let resi_value = 8;
         let resj_value = 8;
         let smoothness_value = 2;
         let ni = format!("NI: {}", ni_value);
         let nj = format!("NJ: {}", nj_value);
+        let ti = format!("TI: {}", ti_value);
+        let tj = format!("TJ: {}", tj_value);
         let resi = format!("RESI: {}", resi_value);
         let resj = format!("RESJ: {}", resj_value);
         let smoothness = format!("Passos: {}", smoothness_value);
         let show_info = false;
-
-        let viewport_width_value = GUI_VIEWPORT_WIDTH as usize;
-        let viewport_height_value = GUI_VIEWPORT_HEIGHT as usize;
-        let viewport_width = format!("{}", viewport_width_value);
-        let viewport_height = format!("{}", viewport_height_value);
 
         let mut obj = Self {
             objects,
@@ -136,6 +143,10 @@ impl Default for App {
             ni_value,
             nj,
             nj_value,
+            ti,
+            ti_value,
+            tj,
+            tj_value,
             resi,
             resi_value,
             resj,
@@ -157,16 +168,20 @@ impl Default for App {
             rotation: VectorInputData::new(0.0, 0.0, 0.0),
             rotation_value: Vec3::new(0.0, 0.0, 0.0),
 
+            window_xmin_value: render.window.xmin,
+            window_xmin: format!("Xmin: {}", render.window.xmin),
+            window_xmax_value: render.window.xmax,
+            window_xmax: format!("Xmax: {}", render.window.xmax),
+            window_ymin_value: render.window.ymin,
+            window_ymin: format!("Ymin: {}", render.window.ymin),
+            window_ymax_value: render.window.ymax,
+            window_ymax: format!("Ymax: {}", render.window.ymax),
+
             render,
             image,
 
             show_control_points: true,
-            cylinder: false,
-
-            viewport_width,
-            viewport_width_value,
-            viewport_height,
-            viewport_height_value,
+            closed: false,
         };
 
         obj.redraw();
@@ -275,24 +290,6 @@ impl App {
         ui.radio_value(&mut self.theme, Theme::Light, "Claro");
         ui.radio_value(&mut self.theme, Theme::Dark, "Escuro");
 
-        /*ui.heading("Dimensões da Viewport");
-        ui.horizontal(|ui| {
-            ui.label("Largura:");
-            ui.add(TextEdit::singleline(&mut self.viewport_width)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-        });
-        ui.horizontal(|ui| {
-            ui.label("Altura:");
-            ui.add(TextEdit::singleline(&mut self.viewport_height)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-        });
-        if ui.button("Aplicar Dimensões").clicked() {
-            if parse_input("Largura:", &mut self.viewport_width_value, &mut self.viewport_width) &&
-               parse_input("Altura:", &mut self.viewport_height_value, &mut self.viewport_height) {
-                redraw = true;
-            }
-        }*/
-
         ui.separator();
 
         ui.heading("Arestas");
@@ -332,25 +329,29 @@ impl App {
 
         if ui.button("Criar novo objeto").clicked() {
             if self.parse_object_props() {
-                let new_object = Object::new(self.ni_value, self.nj_value, self.resi_value, self.resj_value, self.smoothness_value, self.ka_value, self.kd_value, self.ks_value, self.n_value, self.cylinder);
+                let new_object = Object::new(self.ni_value, self.nj_value, self.ti_value, self.tj_value, self.resi_value, self.resj_value, self.smoothness_value, self.ka_value, self.kd_value, self.ks_value, self.n_value, self.closed);
                 self.objects.push(new_object);
                 self.selected_object = Some(self.objects.len() - 1);
                 redraw = true;
             }
         }
-        ui.checkbox(&mut self.cylinder, "Criar objeto fechado");
+        ui.checkbox(&mut self.closed, "Criar objeto fechado");
 
         ui.collapsing("Pontos de controle", |ui| {
             ui.add(TextEdit::singleline(&mut self.ni)
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
             ui.add(TextEdit::singleline(&mut self.nj)
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.ti)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.tj)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
             ui.add(TextEdit::singleline(&mut self.smoothness)
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
             if let Some(idx) = self.selected_object {
                 if ui.button("Modificar objeto selecionado").clicked() {
-                    if self.parse_ni_nj_smoothness() {
-                        self.objects[idx].set_ni_nj(self.ni_value, self.nj_value, self.smoothness_value);
+                    if self.parse_ni_nj_ti_tj_smoothness() {
+                        self.objects[idx].set_ni_nj_ti_tj(self.ni_value, self.nj_value, self.ti_value, self.tj_value, self.smoothness_value);
                         self.objects[idx].scale(100.0);
                         redraw = true;
                     }
@@ -490,6 +491,23 @@ impl App {
                 redraw = true;
             }
         });
+        ui.collapsing("Janela de visualização", |ui| {
+            ui.add(TextEdit::singleline(&mut self.window_xmin)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.window_xmax)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.window_ymin)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            ui.add(TextEdit::singleline(&mut self.window_ymax)
+                .desired_width(GUI_VECTOR_INPUT_WIDTH));
+            if ui.button("Aplicar").clicked() {
+                parse_input("Xmin:", &mut self.render.window.xmin, &mut self.window_xmin);
+                parse_input("Xmax:", &mut self.render.window.xmax, &mut self.window_xmax);
+                parse_input("Ymin:", &mut self.render.window.ymin, &mut self.window_ymin);
+                parse_input("Ymax:", &mut self.render.window.ymax, &mut self.window_ymax);
+                redraw = true;
+            }
+        });
 
         ui.separator();
         ui.heading("Transformações");
@@ -618,7 +636,7 @@ impl App {
 
     pub fn central_panel_content(&mut self, ui: &mut Ui) {
         let (response, painter) =
-            ui.allocate_painter(Vec2::new(self.viewport_width_value as f32, self.viewport_height_value as f32), Sense::hover());
+            ui.allocate_painter(Vec2::new(GUI_VIEWPORT_WIDTH, GUI_VIEWPORT_HEIGHT), Sense::hover());
         let to_screen = emath::RectTransform::from_to(
             Rect::from_min_size(Pos2::ZERO, response.rect.size()),
             response.rect,
@@ -683,16 +701,18 @@ impl App {
 impl App {
     fn parse_object_props(&mut self) -> bool {
         let mut success = true;
-        success &= self.parse_ni_nj_smoothness();
+        success &= self.parse_ni_nj_ti_tj_smoothness();
         success &= self.parse_resi_resj();
         success &= self.parse_ka_kd_ks();
         success
     }
 
-    fn parse_ni_nj_smoothness(&mut self) -> bool {
+    fn parse_ni_nj_ti_tj_smoothness(&mut self) -> bool {
         let mut success = true;
         success &= parse_input("NI:", &mut self.ni_value, &mut self.ni);
         success &= parse_input("NJ:", &mut self.nj_value, &mut self.nj);
+        success &= parse_input("TI:", &mut self.ti_value, &mut self.ti);
+        success &= parse_input("TJ:", &mut self.tj_value, &mut self.tj);
         success &= parse_input("Passos:", &mut self.smoothness_value, &mut self.smoothness);
         if self.ni_value < 4 {
             self.ni = "NI: Inválido!".to_string();
