@@ -46,7 +46,7 @@ impl Face {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Object {
     /// Quantidades de pontos de controle na direção i.
-    ni: u8,
+    pub ni: u8,
     /// Quantidades de pontos de controle na direção j.
     nj: u8,
     /// Grau do polinômio interpolador na direção i.
@@ -132,7 +132,7 @@ impl Object {
         };
 
         obj.calc_mesh();
-        obj.calc_edges_and_faces();
+        obj.cal_faces();
         obj.calc_centroid();
 
         obj
@@ -148,7 +148,7 @@ impl Object {
         self.control_points = Self::gen_control_points(ni, nj, smoothing_iterations);
 
         self.calc_mesh();
-        self.calc_edges_and_faces();
+        self.cal_faces();
         self.calc_centroid();
     }
 
@@ -157,7 +157,7 @@ impl Object {
         self.resj = resj;
 
         self.calc_mesh();
-        self.calc_edges_and_faces();
+        self.cal_faces();
         self.calc_centroid();
     }
 
@@ -170,10 +170,10 @@ impl Object {
         let mut control_points: Vec<Vec3> = Vec::with_capacity((ni as usize + 1) * (nj as usize + 1));
         let ti = 4.0 / ni as f32;
         let tj = 4.0 / nj as f32;
-        let mut i = ni as f32 / -2.0;
+        let mut i = 0.0;
         let mut j;
         for _ in 0..=ni {
-            j = nj as f32 / -2.0;
+            j = 0.0;
             for _ in 0..=nj {
                 control_points.push(Vec3::new(
                     i,
@@ -188,16 +188,24 @@ impl Object {
         control_points
     }
 
+    /// Gera um objeto no formato de um cilindro fechado.
     fn gen_closed_control_points(ni: u8, nj: u8) -> Vec<Vec3> {
         let mut control_points: Vec<Vec3> = Vec::with_capacity((ni as usize + 1) * (nj as usize + 1));
-        let step_i = 8.0 * std::f32::consts::PI / (ni as f32 + 1.0);
-        let step_j = 4.0 / nj as f32;
-        for i in 0..=ni {
-            for j in 0..=nj {
-                let x = i as f32 * step_i;
-                let y = j as f32 * step_j;
-                control_points.push(Vec3::new(x.cos(), y,  x.sin()));
+        let ti = 2.0 * std::f32::consts::PI / ni as f32;
+        let tj = 4.0 / nj as f32;
+        let mut i: f32 = 0.0;
+        let mut j: f32;
+        for _ in 0..=ni {
+            j = 0.0;
+            for _ in 0..=nj {
+                control_points.push(Vec3::new(
+                    i.cos(),
+                    i.sin(),
+                    j,
+                ));
+                j += tj;
             }
+            i += ti;
         }
         control_points
     }
@@ -298,72 +306,54 @@ impl Object {
         self.vertices = new_vertices;
     }
 
-    /// Gera as faces triangulares da malha.
-    fn calc_edges_and_faces_tri(&mut self) {
-        let resi = self.resi as usize;
-        let resj = self.resj as usize;
-        let i_max = if self.closed { resi } else { resi - 1 };
-        for i in 0..i_max {
-            let next_i = if self.closed { (i + 1) % resi } else { i + 1 };
-            for j in 0..resj - 1 {
-                let a_index = next_i * resj + j;
-                let b_index = next_i * resj + (j + 1);
-                let c_index = i * resj + (j + 1);
-                let d_index = i * resj + j;
-
-                let abc_face = Face {
-                    vertices: vec![a_index, b_index, c_index, a_index],
-                    visible: false,
-                    normal: Vec3::zeros(),
-                    direction: Vec3::zeros(),
-                    centroid: Vec3::zeros(),
-                };
-                self.faces.push(abc_face);
-
-                let acd_face = Face {
-                    vertices: vec![a_index, c_index, d_index, a_index],
-                    visible: false,
-                    normal: Vec3::zeros(),
-                    direction: Vec3::zeros(),
-                    centroid: Vec3::zeros(),
-                };
-                self.faces.push(acd_face);
-            }
-        }
-    }
-
-    fn calc_edges_and_faces_quad(&mut self) {
-        let resi = self.resi as usize;
-        let resj = self.resj as usize;
-        let i_max = if self.closed { resi } else { resi - 1 };
-        for i in 0..i_max {
-            let next_i = if self.closed { (i + 1) % resi } else { i + 1 };
-            for j in 0..resj - 1 {
-                let a_index = next_i * resj + j;
-                let b_index = next_i * resj + (j + 1);
-                let c_index = i * resj + (j + 1);
-                let d_index = i * resj + j;
-
-                let face = Face {
-                    vertices: vec![a_index, b_index, c_index, d_index, a_index],
-                    visible: false,
-                    normal: Vec3::zeros(),
-                    direction: Vec3::zeros(),
-                    centroid: Vec3::zeros(),
-                };
-                self.faces.push(face);
-            }
-        }
-        // Removida abordagem de criação de faces extras; o fechamento é tratado pelo wrap modular.
-    }
-
-    // Novo método para gerar arestas e faces com base na flag use_triangular_faces
-    pub fn calc_edges_and_faces(&mut self) {
+    // Método para gerar faces
+    pub fn cal_faces(&mut self) {
         self.faces.clear();
-        if USE_TRIANGULAR_FACES {
-            self.calc_edges_and_faces_tri();
-        } else {
-            self.calc_edges_and_faces_quad();
+
+        let resi = if self.ni > 33 { self.resi - 1 } else { self.resi } as usize;
+        let resj = if self.nj > 33 { self.resj - 1 } else { self.resj } as usize;
+
+        for i in 0..resi - 1 {
+            for j in 0..resj - 1 {
+                let mut a_index = (i + 1) * self.resj as usize + j;
+                let mut b_index = (i + 1) * self.resj as usize + (j + 1);
+                let c_index = i * self.resj as usize + (j + 1);
+                let d_index = i * self.resj as usize + j;
+
+                if self.closed && i + 2 == resi { // i + 2 em vez de resi - 2 para evitar subtration overflow
+                    a_index = j;
+                    b_index = j + 1;
+                }
+
+                if USE_TRIANGULAR_FACES {
+                    let abc_face = Face {
+                        vertices: vec![a_index, b_index, c_index, a_index],
+                        visible: false,
+                        normal: Vec3::zeros(),
+                        direction: Vec3::zeros(),
+                        centroid: Vec3::zeros(),
+                    };
+                    self.faces.push(abc_face);
+
+                    let acd_face = Face {
+                        vertices: vec![a_index, c_index, d_index, a_index],
+                        visible: false,
+                        normal: Vec3::zeros(),
+                        direction: Vec3::zeros(),
+                        centroid: Vec3::zeros(),
+                    };
+                    self.faces.push(acd_face);
+                } else {
+                    let face = Face {
+                        vertices: vec![a_index, b_index, c_index, d_index, a_index],
+                        visible: false,
+                        normal: Vec3::zeros(),
+                        direction: Vec3::zeros(),
+                        centroid: Vec3::zeros(),
+                    };
+                    self.faces.push(face);
+                }
+            }
         }
     }
 
