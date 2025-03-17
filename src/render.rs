@@ -199,21 +199,21 @@ impl Render {
         (y, x)
     }
 
-    /// Converte coordenadas de buffer para SRT.
-    #[inline(always)]
-    pub fn buffer_to_srt(
-        &self,
-        i: i32,
-        j: i32,
-    ) -> (i32, i32) {
-        let ni = i as f32 / (self.buffer_height as f32 - 1.0);
-        let nj = j as f32 / (self.buffer_width as f32 - 1.0);
+    // Converte coordenadas de buffer para SRT.
+    // #[inline(always)]
+    // pub fn buffer_to_srt(
+    //     &self,
+    //     i: i32,
+    //     j: i32,
+    // ) -> (i32, i32) {
+    //     let ni = i as f32 / (self.buffer_height as f32 - 1.0);
+    //     let nj = j as f32 / (self.buffer_width as f32 - 1.0);
 
-        let y = ni * (self.viewport.vmax - self.viewport.vmin) + self.viewport.vmin;
-        let x = nj * (self.viewport.umax - self.viewport.umin) + self.viewport.umin;
+    //     let y = ni * (self.viewport.vmax - self.viewport.vmin) + self.viewport.vmin;
+    //     let x = nj * (self.viewport.umax - self.viewport.umin) + self.viewport.umin;
 
-        (y as i32, x as i32)
-    }
+    //     (y as i32, x as i32)
+    // }
 
     /// Seta um Z no ZBuffer.
     #[inline(always)]
