@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use crate::app::color_input::*;
 use crate::app::vector_input::*;
 use crate::app::parse_input::*;
-use crate::constants::*;
+use crate::{constants::*, object};
 use crate::object::Object;
 use crate::render::*;
 use crate::types::*;
@@ -265,6 +265,7 @@ impl App {
             ui.heading("Desenvolvimento:");
             ui.label("Ano: 2025");
             ui.label("Linguagem: Rust");
+            ui.label("Repositório:");
         }
 
         ui.separator();
@@ -348,15 +349,14 @@ impl App {
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
             ui.add(TextEdit::singleline(&mut self.smoothness)
                 .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            if let Some(idx) = self.selected_object {
+            /*if let Some(idx) = self.selected_object {
                 if ui.button("Modificar objeto selecionado").clicked() {
                     if self.parse_ni_nj_ti_tj_smoothness() {
                         self.objects[idx].set_ni_nj_ti_tj(self.ni_value, self.nj_value, self.ti_value, self.tj_value, self.smoothness_value);
-                        self.objects[idx].scale(100.0);
                         redraw = true;
                     }
                 }
-            }
+            }*/
         });
         ui.collapsing("Resolução", |ui| {
             ui.add(TextEdit::singleline(&mut self.resi)
@@ -691,11 +691,11 @@ impl App {
                 let m_srt_sru = self.render.m_srt_sru.clone();
 
                 let control_point_radius = 2.0;
-                let control_points_srt: Vec<Vec3> = self.render.calc_srt_convertions(&self.objects[idx].control_points);
-                let control_points: &mut Vec<Vec3> = &mut self.objects[idx].control_points;
-
                 let mut dragged = false;
                 let mut shapes = Vec::new();
+
+                let control_points_srt: Vec<Vec3> = self.render.calc_srt_convertions(&self.objects[idx].control_points);
+                let control_points: &mut Vec<Vec3> = &mut self.objects[idx].control_points;
 
                 for (i, control_point) in control_points_srt.iter().enumerate() {
                     let (y, x) = self.render.srt_to_buffer(control_point.y as i32, control_point.x as i32);
