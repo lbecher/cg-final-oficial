@@ -265,7 +265,6 @@ impl App {
             ui.heading("Desenvolvimento:");
             ui.label("Ano: 2025");
             ui.label("Linguagem: Rust");
-            ui.label("Repositório:");
         }
 
         ui.separator();
