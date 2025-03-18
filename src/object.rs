@@ -138,7 +138,7 @@ impl Object {
         obj
     }
 
-    pub fn set_ni_nj_ti_tj(&mut self, ni: u8, nj: u8, ti: u8, tj: u8, smoothing_iterations: u8) {
+    /*pub fn set_ni_nj_ti_tj(&mut self, ni: u8, nj: u8, ti: u8, tj: u8, smoothing_iterations: u8) {
         self.ni = ni;
         self.nj = nj;
 
@@ -150,7 +150,7 @@ impl Object {
         self.calc_mesh();
         self.cal_faces();
         self.calc_centroid();
-    }
+    }*/
 
     pub fn set_resi_resj(&mut self, resi: u8, resj: u8) {
         self.resi = resi;

@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use crate::app::color_input::*;
 use crate::app::vector_input::*;
 use crate::app::parse_input::*;
-use crate::{constants::*, object};
+use crate::constants::*;
 use crate::object::Object;
 use crate::render::*;
 use crate::types::*;
