@@ -1010,10 +1010,10 @@ impl Render {
                         if self.can_paint(*i, j, z) {
                             let nn: Vec3 = n.normalize();
 
-                            //let vertice: Vec3 = Vec3::new(j as f32, *i as f32, z);
-                            //let vertice: Vec3 = (self.m_srt_sru * vec3_to_mat4x1(&vertice)).xyz();
-                            //let ln: Vec3 = (self.light.l - vertice).normalize();
-                            //let sn: Vec3 = (self.camera.vrp - vertice).normalize();
+                            //let pixel: Vec3 = Vec3::new(j as f32, *i as f32, z);
+                            //let pixel: Vec3 = (self.m_srt_sru * vec3_to_mat4x1(&pixel)).xyz();
+                            //let ln: Vec3 = (self.light.l - pixel).normalize();
+                            //let sn: Vec3 = (self.camera.vrp - pixel).normalize();
 
                             let color = self.calc_color_for_phong(
                                 object.ka,
