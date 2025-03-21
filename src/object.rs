@@ -195,6 +195,7 @@ impl Object {
         let tj = 4.0 / nj as f32;
         let mut i: f32 = 0.0;
         let mut j: f32;
+
         for _ in 0..=ni {
             j = 0.0;
             for _ in 0..=nj {
@@ -207,6 +208,7 @@ impl Object {
             }
             i += ti;
         }
+
         control_points
     }
 
