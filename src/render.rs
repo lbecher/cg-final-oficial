@@ -673,8 +673,6 @@ impl Render {
         primary_edge_color: [u8; 4],
         secondary_edge_color: [u8; 4],
     ) {
-        println!("{}", self.m_srt_sru);
-
         self.update_faces(object);
         let vertices_srt = self.calc_srt_convertions(&object.vertices);
 
