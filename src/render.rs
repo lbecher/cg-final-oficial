@@ -612,14 +612,12 @@ impl Render {
         ks: Vec3,
         n: f32,
         nn: Vec3,
-        sn: Vec3,
         ln: Vec3,
+        hn: Vec3,
     ) -> [u8; 4] {
         let mut it: Vec3 = Vec3::zeros();
 
         let cos_theta = nn.dot(&ln);
-
-        let hn: Vec3 = (ln + sn).normalize();
         let cos_alpha = nn.dot(&hn);
 
         for i in 0..3 {
@@ -940,6 +938,7 @@ impl Render {
 
         let ln: Vec3 = (self.light.l - object.centroid).normalize();
         let sn: Vec3 = (self.camera.vrp - object.centroid).normalize();
+        let hn: Vec3 = (ln + sn).normalize();
 
         let vertices_srt: Vec<Vec3> = self.calc_srt_convertions(&object.vertices);
 
@@ -962,9 +961,6 @@ impl Render {
             if self.visibility_filter && !face.visible {
                 continue;
             }
-
-            //let ln: Vec3 = (self.light.l - face.centroid).normalize();
-            //let sn: Vec3 = (self.camera.vrp - face.centroid).normalize();
 
             let intersections = Self::calc_intersections_for_phong(&vertices_srt, &vertex_normals, face);
 
@@ -1010,19 +1006,14 @@ impl Render {
                         if self.can_paint(*i, j, z) {
                             let nn: Vec3 = n.normalize();
 
-                            //let pixel: Vec3 = Vec3::new(j as f32, *i as f32, z);
-                            //let pixel: Vec3 = (self.m_srt_sru * vec3_to_mat4x1(&pixel)).xyz();
-                            //let ln: Vec3 = (self.light.l - pixel).normalize();
-                            //let sn: Vec3 = (self.camera.vrp - pixel).normalize();
-
                             let color = self.calc_color_for_phong(
                                 object.ka,
                                 object.kd,
                                 object.ks,
                                 object.n,
                                 nn,
-                                sn,
                                 ln,
+                                hn,
                             );
 
                             self.paint(*i as i32, j as i32, color);
