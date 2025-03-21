@@ -199,9 +199,9 @@ impl Object {
             j = 0.0;
             for _ in 0..=nj {
                 control_points.push(Vec3::new(
-                    i.cos(),
                     i.sin(),
                     j,
+                    i.cos(),
                 ));
                 j += tj;
             }
