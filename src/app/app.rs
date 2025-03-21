@@ -457,7 +457,7 @@ impl App {
                 parse_input("X:", &mut self.render.camera.vrp.x, &mut self.vrp.x);
                 parse_input("Y:", &mut self.render.camera.vrp.y, &mut self.vrp.y);
                 parse_input("Z:", &mut self.render.camera.vrp.z, &mut self.vrp.z);
-                self.render.calc_sru_src_matrix();
+                self.render.calc_sru_srt_matrix();
                 redraw = true;
             }
         });
@@ -472,7 +472,7 @@ impl App {
                 parse_input("X:", &mut self.render.camera.y.x, &mut self.y.x);
                 parse_input("Y:", &mut self.render.camera.y.y, &mut self.y.y);
                 parse_input("Z:", &mut self.render.camera.y.z, &mut self.y.z);
-                self.render.calc_sru_src_matrix();
+                self.render.calc_sru_srt_matrix();
                 redraw = true;
             }
         });
@@ -487,7 +487,7 @@ impl App {
                 parse_input("X:", &mut self.render.camera.p.x, &mut self.p.x);
                 parse_input("Y:", &mut self.render.camera.p.y, &mut self.p.y);
                 parse_input("Z:", &mut self.render.camera.p.z, &mut self.p.z);
-                self.render.calc_sru_src_matrix();
+                self.render.calc_sru_srt_matrix();
                 redraw = true;
             }
         });
@@ -505,6 +505,7 @@ impl App {
                 parse_input("Xmax:", &mut self.render.window.xmax, &mut self.window_xmax);
                 parse_input("Ymin:", &mut self.render.window.ymin, &mut self.window_ymin);
                 parse_input("Ymax:", &mut self.render.window.ymax, &mut self.window_ymax);
+                self.render.calc_sru_srt_matrix();
                 redraw = true;
             }
         });
@@ -538,7 +539,7 @@ impl App {
                     self.render.viewport.vmin = vmin;
                     self.render.viewport.vmax = vmax;
                 }
-                self.render.calc_sru_src_matrix();
+                self.render.calc_sru_srt_matrix();
                 redraw = true;
             }
         });

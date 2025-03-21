@@ -293,7 +293,7 @@ impl Render {
     }
 
     /// Calcula a matriz de transformação de coordenadas em SRU para SRC.
-    pub fn calc_sru_src_matrix(&self) -> Mat4 {
+    fn calc_sru_src_matrix(&self) -> Mat4 {
         let n: Vec3 = self.camera.vrp - self.camera.p;
         let nn: Vec3 = n.normalize();
 
@@ -331,7 +331,7 @@ impl Render {
     }
 
     /// Calcula a matriz de transformação de coordenadas em SRU para SRT (matriz concatenada).
-    fn calc_sru_srt_matrix(&mut self) {
+    pub fn calc_sru_srt_matrix(&mut self) {
         self.m_sru_srt = self.calc_jp_matrix() * self.calc_proj_matrix() * self.calc_sru_src_matrix();
         self.m_srt_sru = self.m_sru_srt.try_inverse().unwrap_or_else(Mat4::identity);
     }
@@ -575,8 +575,7 @@ impl Render {
         let mut it: Vec3 = Vec3::zeros();
 
         let cos_theta = nn.dot(&ln);
-
-        let r: Vec3 = 2.0 * cos_theta * sn - ln;
+        let r: Vec3 = 2.0 * cos_theta * nn - ln;
         let cos_alpha = r.dot(&sn);
 
         for i in 0..3 {
@@ -674,6 +673,8 @@ impl Render {
         primary_edge_color: [u8; 4],
         secondary_edge_color: [u8; 4],
     ) {
+        println!("{}", self.m_srt_sru);
+
         self.update_faces(object);
         let vertices_srt = self.calc_srt_convertions(&object.vertices);
 
