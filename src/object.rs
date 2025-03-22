@@ -194,22 +194,18 @@ impl Object {
     /// Gera um objeto no formato de um cilindro fechado.
     fn gen_closed_control_points(ni: u8, nj: u8) -> Vec<Vec3> {
         let mut control_points: Vec<Vec3> = Vec::with_capacity((ni as usize + 1) * (nj as usize + 1));
-        let ti = 2.0 * std::f32::consts::PI / ni as f32;
-        let tj = 4.0 / nj as f32;
-        let mut i: f32 = 0.0;
-        let mut j: f32;
+        let d_theta = std::f32::consts::PI / ni as f32;      // Variação em θ (latitude)
+        let d_phi = 2.0 * std::f32::consts::PI / nj as f32;  // Variação em φ (longitude)
 
-        for _ in 0..=ni {
-            j = 0.0;
-            for _ in 0..=nj {
-                control_points.push(Vec3::new(
-                    i.sin(),
-                    j,
-                    i.cos(),
-                ));
-                j += tj;
+        for i in 0..=ni {
+            let theta = i as f32 * d_theta;
+            for j in 0..=nj {
+                let phi = j as f32 * d_phi;
+                let x = theta.sin() * phi.cos();
+                let y = theta.sin() * phi.sin();
+                let z = theta.cos();
+                control_points.push(Vec3::new(x, y, z));
             }
-            i += ti;
         }
 
         control_points

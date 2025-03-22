@@ -79,7 +79,7 @@ pub struct App {
     viewport_vmax: String,
 
     closed: bool,
-    show_info: bool,
+    current_tab: Tab,
 }
 
 impl Default for App {
@@ -116,12 +116,10 @@ impl Default for App {
         let resi = format!("RESI: {}", resi_value);
         let resj = format!("RESJ: {}", resj_value);
         let smoothness = format!("Passos: {}", smoothness_value);
-        let show_info = false;
 
         let mut obj = Self {
             objects,
             selected_object,
-            show_info,
 
             primary_color: [0, 255, 0, 255],
             secondary_color: [255, 0, 0, 255],
@@ -184,6 +182,7 @@ impl Default for App {
 
             show_control_points: true,
             closed: false,
+            current_tab: Tab::General,
         };
 
         obj.redraw();
@@ -248,420 +247,460 @@ impl App {
     pub fn side_panel_content(&mut self, ui: &mut Ui) {
         let mut redraw = false;
 
-        // Botão de Info
-        if ui.button("Sobre").clicked() {
-            self.show_info = !self.show_info; // Alterna a visibilidade do painel de informações
-        }
-
-        // Exibe as informações quando show_info é verdadeiro
-        if self.show_info {
-            // só perfumaria
-            ui.separator();
-            ui.heading("Desenvolvedores:");
-            ui.label("Luiz Becher de Araujo");
-            ui.label("Heloisa Aparecida Alves");
-            ui.label("Matheus Lucas Ferreira Jacinto");
-            ui.separator();
-            ui.heading("Desenvolvimento:");
-            ui.label("Ano: 2025");
-            ui.label("Linguagem: Rust");
-            ui.label("Repositório:");
-        }
-
-        ui.separator();
-
-        ui.heading("Projeto");
-        if ui.button("Salvar projeto").clicked() {
-            if let Some(path) = rfd::FileDialog::new().save_file() {
-                if let Err(e) = self.save_objects(path.to_str().unwrap()) {
-                    eprintln!("Failed to save objects: {}", e);
-                }
+        ui.horizontal(|ui| {
+            if ui.selectable_label(self.current_tab == Tab::General, "Geral").clicked() {
+                self.current_tab = Tab::General;
             }
-        }
-        if ui.button("Carregar projeto").clicked() {
-            if let Some(path) = rfd::FileDialog::new().pick_file() {
-                if let Err(e) = self.load_objects(path.to_str().unwrap()) {
-                    eprintln!("Failed to load objects: {}", e);
-                }
+            if ui.selectable_label(self.current_tab == Tab::Objects, "Objetos").clicked() {
+                self.current_tab = Tab::Objects;
             }
-        }
-
-        ui.separator();
-
-        ui.heading("Tema");
-        ui.radio_value(&mut self.theme, Theme::Light, "Claro");
-        ui.radio_value(&mut self.theme, Theme::Dark, "Escuro");
-
-        ui.separator();
-
-        ui.heading("Arestas");
-        ui.horizontal( |ui| {
-            ui.label("Cor primaria:");
-            ui.color_edit_button_srgba_unmultiplied(&mut self.primary_color);
+            if ui.selectable_label(self.current_tab == Tab::World, "Mundo").clicked() {
+                self.current_tab = Tab::World;
+            }
+            if ui.selectable_label(self.current_tab == Tab::About, "Sobre").clicked() {
+                self.current_tab = Tab::About;
+            }
         });
 
-        ui.horizontal( |ui| {
-            ui.label("Cor secundaria:");
-            ui.color_edit_button_srgba_unmultiplied(&mut self.secondary_color);
-        });
-
-        if ui.button("Aplicar Cores").clicked() {
-            self.redraw();
-        }
-
-        ui.separator();
-
-        ui.heading("Sombreamento");
-        ui.label(format!("Tempo de renderização: {:?} ms", self.render_duration.as_millis()));
-        let old_shader = self.render.shader_type.clone();
-        let old_visibility_filter = self.render.visibility_filter;
-        ui.radio_value(&mut self.render.shader_type, ShaderType::Wireframe, "Aramado");
-        ui.radio_value(&mut self.render.shader_type, ShaderType::Flat, "Constante");
-        ui.radio_value(&mut self.render.shader_type, ShaderType::Gouraud, "Gouraud");
-        ui.radio_value(&mut self.render.shader_type, ShaderType::Phong, "Phong");
-        ui.checkbox(&mut self.render.visibility_filter, "Filtro de visibilidade");
-        ui.checkbox(&mut self.show_control_points, "Pontos de controle");
-        if self.render.shader_type != old_shader || self.render.visibility_filter != old_visibility_filter {
-            redraw = true;
-        }
-
-        ui.separator();
-        ui.heading("Objetos");
-
-        if ui.button("Criar novo objeto").clicked() {
-            if self.parse_object_props() {
-                let new_object = Object::new(self.ni_value, self.nj_value, self.ti_value, self.tj_value, self.resi_value, self.resj_value, self.smoothness_value, self.ka_value, self.kd_value, self.ks_value, self.n_value, self.closed);
-                self.objects.push(new_object);
-                self.select_object(self.objects.len() - 1);
-                redraw = true;
-            }
-        }
-        ui.checkbox(&mut self.closed, "Criar objeto fechado");
-
-        ui.collapsing("Pontos de controle", |ui| {
-            ui.add(TextEdit::singleline(&mut self.ni)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.nj)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.ti)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.tj)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.smoothness)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            /*if let Some(idx) = self.selected_object {
-                if ui.button("Modificar objeto selecionado").clicked() {
-                    if self.parse_ni_nj_ti_tj_smoothness() {
-                        self.objects[idx].set_ni_nj_ti_tj(self.ni_value, self.nj_value, self.ti_value, self.tj_value, self.smoothness_value);
-                        redraw = true;
+        match self.current_tab {
+            Tab::General => {
+                ui.heading("Projeto");
+                ui.horizontal(|ui| {
+                    if ui.button("Abrir").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("Arquivo LHM", &["lhm"])
+                            .pick_file() {
+                                if let Err(_e) = self.load_objects(path.to_str().unwrap()) {
+                                    eprintln!("Falha ao abrir o projeto!");
+                                }
+                            }
                     }
-                }
-            }*/
-        });
-        ui.collapsing("Resolução", |ui| {
-            ui.add(TextEdit::singleline(&mut self.resi)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.resj)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            if let Some(idx) = self.selected_object {
-                if ui.button("Modificar objeto selecionado").clicked() {
-                    if self.parse_resi_resj() {
-                        self.objects[idx].set_resi_resj(self.resi_value, self.resj_value);
-                        redraw = true;
+                    if ui.button("Salvar").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .set_file_name("Novo Projeto")
+                            .add_filter("Arquivo LHM", &["lhm"])
+                            .save_file() {
+                                if let Err(_e) = self.save_objects(path.to_str().unwrap()) {
+                                    eprintln!("Falha ao salvar o projeto!");
+                                }
+                            }
                     }
+                });
+
+                ui.separator();
+                ui.heading("Tema");
+                ui.radio_value(&mut self.theme, Theme::Light, "Claro");
+                ui.radio_value(&mut self.theme, Theme::Dark, "Escuro");
+
+                ui.separator();
+                ui.heading("Arestas");
+                ui.horizontal( |ui| {
+                    ui.label("Cor primária:");
+                    ui.color_edit_button_srgba_unmultiplied(&mut self.primary_color);
+                });
+                ui.horizontal( |ui| {
+                    ui.label("Cor secundária:");
+                    ui.color_edit_button_srgba_unmultiplied(&mut self.secondary_color);
+                });
+                if ui.button("Aplicar cores").clicked() {
+                    self.redraw();
                 }
-            }
-        });
-        ui.collapsing("Material", |ui| {
-            ui.label("Ka:");
-            ui.add(TextEdit::singleline(&mut self.ka.r)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.ka.g)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.ka.b)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.label("Kd:");
-            ui.add(TextEdit::singleline(&mut self.kd.r)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.kd.g)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.kd.b)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.label("Ks:");
-            ui.add(TextEdit::singleline(&mut self.ks.r)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.ks.g)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.ks.b)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.label("N:");
-            ui.add(TextEdit::singleline(&mut self.n)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            if let Some(idx) = self.selected_object {
-                if ui.button("Modificar objeto selecionado").clicked() {
-                    if self.parse_ka_kd_ks() {
-                        self.objects[idx].ka = self.ka_value;
-                        self.objects[idx].kd = self.kd_value;
-                        self.objects[idx].ks = self.ks_value;
-                        self.objects[idx].n = self.n_value;
-                        redraw = true;
-                    }
+
+                ui.separator();
+                ui.heading("Sombreamento");
+                let old_shader = self.render.shader_type.clone();
+                let old_visibility_filter = self.render.visibility_filter;
+                ui.radio_value(&mut self.render.shader_type, ShaderType::Wireframe, "Aramado");
+                ui.radio_value(&mut self.render.shader_type, ShaderType::Flat, "Constante");
+                ui.radio_value(&mut self.render.shader_type, ShaderType::Gouraud, "Gouraud");
+                ui.radio_value(&mut self.render.shader_type, ShaderType::Phong, "Phong");
+                ui.label(format!("Tempo de renderização: {} ms", self.render_duration.as_millis()));
+                if self.render.shader_type != old_shader || self.render.visibility_filter != old_visibility_filter {
+                    redraw = true;
                 }
-            }
-        });
 
-        ui.separator();
-        ui.heading("Lista de Objetos");
-        if self.objects.is_empty() {
-            ui.label("Nenhum objeto criado");
-        }
-        for i in 0..self.objects.len() {
-            if ui.selectable_label(self.selected_object == Some(i), format!("Objeto {}", i)).clicked() {
-                self.select_object(i);
+                ui.separator();
+                ui.heading("Outras opções");
+                ui.checkbox(&mut self.render.visibility_filter, "Filtro de visibilidade");
+                ui.checkbox(&mut self.show_control_points, "Pontos de controle");
             }
-        }
-
-        if ui.button("Limpar seleção").clicked() {
-            self.selected_object = None;
-        }
-        if ui.button("Limpar objetos").clicked() {
-            self.objects.clear();
-            self.selected_object = None;
-            redraw = true;
-        }
-
-        if ui.button("Remover objeto selecionado").clicked() {
-            if let Some(idx) = self.selected_object {
-                self.objects.remove(idx);
-                self.selected_object = None;
-                self.redraw();
-            }
-        }
-
-        ui.separator();
-        ui.heading("Iluminação");
-        vector_input(ui, "L (posição da lâmpada)", &mut self.l, &mut self.render.light.l, &mut redraw);
-        color_input(ui, "IL (cor da lâmpada)", &mut self.il, &mut self.render.light.il, &mut redraw);
-        color_input(ui, "ILA (cor da luz ambiente)", &mut self.ila, &mut self.render.light.ila, &mut redraw);
-
-        ui.separator();
-        ui.heading("Câmera");
-        ui.collapsing("VRP (posição da câmera)", |ui| {
-            ui.add(TextEdit::singleline(&mut self.vrp.x)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.vrp.y)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.vrp.z)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            if ui.button("Aplicar").clicked() {
-                parse_input("X:", &mut self.render.camera.vrp.x, &mut self.vrp.x);
-                parse_input("Y:", &mut self.render.camera.vrp.y, &mut self.vrp.y);
-                parse_input("Z:", &mut self.render.camera.vrp.z, &mut self.vrp.z);
-                self.render.calc_sru_srt_matrix();
-                redraw = true;
-            }
-        });
-        ui.collapsing("Y", |ui| {
-            ui.add(TextEdit::singleline(&mut self.y.x)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.y.y)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.y.z)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            if ui.button("Aplicar").clicked() {
-                parse_input("X:", &mut self.render.camera.y.x, &mut self.y.x);
-                parse_input("Y:", &mut self.render.camera.y.y, &mut self.y.y);
-                parse_input("Z:", &mut self.render.camera.y.z, &mut self.y.z);
-                self.render.calc_sru_srt_matrix();
-                redraw = true;
-            }
-        });
-        ui.collapsing("P", |ui| {
-            ui.add(TextEdit::singleline(&mut self.p.x)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.p.y)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.p.z)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            if ui.button("Aplicar").clicked() {
-                parse_input("X:", &mut self.render.camera.p.x, &mut self.p.x);
-                parse_input("Y:", &mut self.render.camera.p.y, &mut self.p.y);
-                parse_input("Z:", &mut self.render.camera.p.z, &mut self.p.z);
-                self.render.calc_sru_srt_matrix();
-                redraw = true;
-            }
-        });
-        ui.collapsing("Janela", |ui| {
-            ui.add(TextEdit::singleline(&mut self.window_xmin)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.window_xmax)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.window_ymin)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.window_ymax)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            if ui.button("Aplicar").clicked() {
-                parse_input("Xmin:", &mut self.render.window.xmin, &mut self.window_xmin);
-                parse_input("Xmax:", &mut self.render.window.xmax, &mut self.window_xmax);
-                parse_input("Ymin:", &mut self.render.window.ymin, &mut self.window_ymin);
-                parse_input("Ymax:", &mut self.render.window.ymax, &mut self.window_ymax);
-                self.render.calc_sru_srt_matrix();
-                redraw = true;
-            }
-        });
-        ui.collapsing("Porta de visão", |ui| {
-            ui.add(TextEdit::singleline(&mut self.viewport_umin)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.viewport_umax)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.viewport_vmin)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            ui.add(TextEdit::singleline(&mut self.viewport_vmax)
-                .desired_width(GUI_VECTOR_INPUT_WIDTH));
-            if ui.button("Aplicar").clicked() {
-                let umin = self.render.viewport.umin;
-                let umax = self.render.viewport.umax;
-                let vmin = self.render.viewport.vmin;
-                let vmax = self.render.viewport.vmax;
-                parse_input("Umin:", &mut self.render.viewport.umin, &mut self.viewport_umin);
-                parse_input("Umax:", &mut self.render.viewport.umax, &mut self.viewport_umax);
-                parse_input("Vmin:", &mut self.render.viewport.vmin, &mut self.viewport_vmin);
-                parse_input("Vmax:", &mut self.render.viewport.vmax, &mut self.viewport_vmax);
-                if self.render.viewport.umax - self.render.viewport.umin < GUI_VIEWPORT_WIDTH - 1.0 {
-                    self.viewport_umax = "Umax: Inválido!".to_string();
-                    self.viewport_umin = "Umin: Inválido!".to_string();
-                    self.render.viewport.umin = umin;
-                    self.render.viewport.umax = umax;
-                }
-                if self.render.viewport.vmax - self.render.viewport.vmin < GUI_VIEWPORT_HEIGHT - 1.0 {
-                    self.viewport_vmax = "Vmax: Inválido!".to_string();
-                    self.viewport_vmin = "Vmin: Inválido!".to_string();
-                    self.render.viewport.vmin = vmin;
-                    self.render.viewport.vmax = vmax;
-                }
-                self.render.calc_sru_srt_matrix();
-                redraw = true;
-            }
-        });
-
-        ui.separator();
-        ui.heading("Transformações");
-        if let Some(idx) = self.selected_object {
-            ui.collapsing("Translação Manual", |ui| {
-                ui.add(TextEdit::singleline(&mut self.translation.x)
-                    .desired_width(GUI_VECTOR_INPUT_WIDTH));
-                ui.add(TextEdit::singleline(&mut self.translation.y)
-                    .desired_width(GUI_VECTOR_INPUT_WIDTH));
-                ui.add(TextEdit::singleline(&mut self.translation.z)
-                    .desired_width(GUI_VECTOR_INPUT_WIDTH));
-                if ui.button("Aplicar").clicked() {
-                    parse_input("X:", &mut self.translation_value.x, &mut self.translation.x);
-                    parse_input("Y:", &mut self.translation_value.y, &mut self.translation.y);
-                    parse_input("Z:", &mut self.translation_value.z, &mut self.translation.z);
+            Tab::Objects => {
+                ui.heading("Objetos");
+                ui.collapsing("Pontos de controle", |ui| {
+                    ui.add(TextEdit::singleline(&mut self.ni)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.nj)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.ti)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.tj)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.smoothness)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                });
+                ui.collapsing("Resolução", |ui| {
+                    ui.add(TextEdit::singleline(&mut self.resi)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.resj)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
                     if let Some(idx) = self.selected_object {
-                        self.objects[idx].translate(&self.translation_value);
-                        redraw = true;
+                        if ui.button("Modificar objeto selecionado").clicked() {
+                            if self.parse_resi_resj() {
+                                self.objects[idx].set_resi_resj(self.resi_value, self.resj_value);
+                                redraw = true;
+                            }
+                        }
                     }
-                }
-            });
-            ui.collapsing("Escala Manual", |ui| {
-                ui.add(TextEdit::singleline(&mut self.scale)
-                    .desired_width(GUI_VECTOR_INPUT_WIDTH));
-                if ui.button("Aplicar").clicked() {
-                    parse_input("XYZ:", &mut self.scale_value, &mut self.scale);
+                });
+                ui.collapsing("Material", |ui| {
+                    ui.label("Ka:");
+                    ui.add(TextEdit::singleline(&mut self.ka.r)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.ka.g)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.ka.b)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.label("Kd:");
+                    ui.add(TextEdit::singleline(&mut self.kd.r)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.kd.g)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.kd.b)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.label("Ks:");
+                    ui.add(TextEdit::singleline(&mut self.ks.r)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.ks.g)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.ks.b)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.label("N:");
+                    ui.add(TextEdit::singleline(&mut self.n)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
                     if let Some(idx) = self.selected_object {
-                        self.objects[idx].scale(self.scale_value);
+                        if ui.button("Modificar objeto selecionado").clicked() {
+                            if self.parse_ka_kd_ks() {
+                                self.objects[idx].ka = self.ka_value;
+                                self.objects[idx].kd = self.kd_value;
+                                self.objects[idx].ks = self.ks_value;
+                                self.objects[idx].n = self.n_value;
+                                redraw = true;
+                            }
+                        }
+                    }
+                });
+                if ui.button("Criar novo objeto").clicked() {
+                    if self.parse_object_props() {
+                        let new_object = Object::new(self.ni_value, self.nj_value, self.ti_value, self.tj_value, self.resi_value, self.resj_value, self.smoothness_value, self.ka_value, self.kd_value, self.ks_value, self.n_value, self.closed);
+                        self.objects.push(new_object);
+                        self.select_object(self.objects.len() - 1);
                         redraw = true;
                     }
                 }
-            });
-            ui.collapsing("Rotação Manual", |ui| {
-                ui.add(TextEdit::singleline(&mut self.rotation.x)
-                    .desired_width(GUI_VECTOR_INPUT_WIDTH));
-                ui.add(TextEdit::singleline(&mut self.rotation.y)
-                    .desired_width(GUI_VECTOR_INPUT_WIDTH));
-                ui.add(TextEdit::singleline(&mut self.rotation.z)
-                    .desired_width(GUI_VECTOR_INPUT_WIDTH));
-                if ui.button("Aplicar").clicked() {
-                    parse_input("X:", &mut self.rotation_value.x, &mut self.rotation.x);
-                    parse_input("Y:", &mut self.rotation_value.y, &mut self.rotation.y);
-                    parse_input("Z:", &mut self.rotation_value.z, &mut self.rotation.z);
+                ui.checkbox(&mut self.closed, "Criar objeto fechado");
+
+                ui.separator();
+                ui.heading("Lista de Objetos");
+                if self.objects.is_empty() {
+                    ui.label("Nenhum objeto criado");
+                }
+                for i in 0..self.objects.len() {
+                    if ui.selectable_label(self.selected_object == Some(i), format!("Objeto {}", i)).clicked() {
+                        self.select_object(i);
+                    }
+                }
+                if ui.button("Limpar seleção").clicked() {
+                    self.selected_object = None;
+                }
+                if ui.button("Limpar objetos").clicked() {
+                    self.objects.clear();
+                    self.selected_object = None;
+                    redraw = true;
+                }
+                if ui.button("Remover objeto selecionado").clicked() {
                     if let Some(idx) = self.selected_object {
-                        self.objects[idx].rotate(&self.rotation_value);
-                        redraw = true;
+                        self.objects.remove(idx);
+                        self.selected_object = None;
+                        self.redraw();
                     }
                 }
-            });
-            ui.horizontal(|ui| {
-                if ui.button("Rodar X+").clicked() {
-                    self.objects[idx].rotate_x(0.1);
-                    self.redraw();
+
+                ui.separator();
+                ui.heading("Transformações");
+                if let Some(idx) = self.selected_object {
+                    ui.collapsing("Translação Manual", |ui| {
+                        ui.add(TextEdit::singleline(&mut self.translation.x)
+                            .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                        ui.add(TextEdit::singleline(&mut self.translation.y)
+                            .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                        ui.add(TextEdit::singleline(&mut self.translation.z)
+                            .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                        if ui.button("Aplicar").clicked() {
+                            parse_input("X:", &mut self.translation_value.x, &mut self.translation.x);
+                            parse_input("Y:", &mut self.translation_value.y, &mut self.translation.y);
+                            parse_input("Z:", &mut self.translation_value.z, &mut self.translation.z);
+                            if let Some(idx) = self.selected_object {
+                                self.objects[idx].translate(&self.translation_value);
+                                redraw = true;
+                            }
+                        }
+                    });
+                    ui.collapsing("Escala Manual", |ui| {
+                        ui.add(TextEdit::singleline(&mut self.scale)
+                            .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                        if ui.button("Aplicar").clicked() {
+                            parse_input("XYZ:", &mut self.scale_value, &mut self.scale);
+                            if let Some(idx) = self.selected_object {
+                                self.objects[idx].scale(self.scale_value);
+                                redraw = true;
+                            }
+                        }
+                    });
+                    ui.collapsing("Rotação Manual", |ui| {
+                        ui.add(TextEdit::singleline(&mut self.rotation.x)
+                            .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                        ui.add(TextEdit::singleline(&mut self.rotation.y)
+                            .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                        ui.add(TextEdit::singleline(&mut self.rotation.z)
+                            .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                        if ui.button("Aplicar").clicked() {
+                            parse_input("X:", &mut self.rotation_value.x, &mut self.rotation.x);
+                            parse_input("Y:", &mut self.rotation_value.y, &mut self.rotation.y);
+                            parse_input("Z:", &mut self.rotation_value.z, &mut self.rotation.z);
+                            if let Some(idx) = self.selected_object {
+                                self.objects[idx].rotate(&self.rotation_value);
+                                redraw = true;
+                            }
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        if ui.button("Rodar X-").clicked() {
+                            self.objects[idx].rotate_x(-0.1);
+                            self.redraw();
+                        }
+                        if ui.button("Rodar X+").clicked() {
+                            self.objects[idx].rotate_x(0.1);
+                            self.redraw();
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        if ui.button("Rodar Y-").clicked() {
+                            self.objects[idx].rotate_y(-0.1);
+                            self.redraw();
+                        }
+                        if ui.button("Rodar Y+").clicked() {
+                            self.objects[idx].rotate_y(0.1);
+                            self.redraw();
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        if ui.button("Rodar Z-").clicked() {
+                            self.objects[idx].rotate_z(-0.1);
+                            self.redraw();
+                        }
+                        if ui.button("Rodar Z+").clicked() {
+                            self.objects[idx].rotate_z(0.1);
+                            self.redraw();
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        if ui.button("Transladar -X").clicked() {
+                            self.objects[idx].translate(&Vec3::new(-1.0, 0.0, 0.0));
+                            self.redraw();
+                        }
+                        if ui.button("Transladar +X").clicked() {
+                            self.objects[idx].translate(&Vec3::new(1.0, 0.0, 0.0));
+                            self.redraw();
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        if ui.button("Transladar -Y").clicked() {
+                            self.objects[idx].translate(& Vec3::new(0.0, -1.0, 0.0));
+                            self.redraw();
+                        }
+                        if ui.button("Transladar +Y").clicked() {
+                            self.objects[idx].translate(&Vec3::new(0.0, 1.0, 0.0));
+                            self.redraw();
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        if ui.button("Transladar -Z").clicked() {
+                            self.objects[idx].translate(&Vec3::new(0.0, 0.0, -1.0));
+                            self.redraw();
+                        }
+                        if ui.button("Transladar +Z").clicked() {
+                            self.objects[idx].translate(&Vec3::new(0.0, 0.0, 1.0));
+                            self.redraw();
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        if ui.button("Escalar -").clicked() {
+                            self.objects[idx].scale(0.95);
+                            self.redraw();
+                        }
+                        if ui.button("Escalar +").clicked() {
+                            self.objects[idx].scale(1.05);
+                            self.redraw();
+                        }
+                    });
                 }
-                if ui.button("Rodar X-").clicked() {
-                    self.objects[idx].rotate_x(-0.1);
-                    self.redraw();
-                }
-            });
-            ui.horizontal(|ui| {
-                if ui.button("Rodar Y+").clicked() {
-                    self.objects[idx].rotate_y(0.1);
-                    self.redraw();
-                }
-                if ui.button("Rodar Y-").clicked() {
-                    self.objects[idx].rotate_y(-0.1);
-                    self.redraw();
-                }
-            });
-            ui.horizontal(|ui| {
-                if ui.button("Rodar Z+").clicked() {
-                    self.objects[idx].rotate_z(0.1);
-                    self.redraw();
-                }
-                if ui.button("Rodar Z-").clicked() {
-                    self.objects[idx].rotate_z(-0.1);
-                    self.redraw();
-                }
-            });
-            ui.horizontal(|ui| {
-                if ui.button("Transladar +X").clicked() {
-                    self.objects[idx].translate(&Vec3::new(1.0, 0.0, 0.0));
-                    self.redraw();
-                }
-                if ui.button("Transladar -X").clicked() {
-                    self.objects[idx].translate(&Vec3::new(-1.0, 0.0, 0.0));
-                    self.redraw();
-                }
-            });
-            ui.horizontal(|ui| {
-                if ui.button("Transladar +Y").clicked() {
-                    self.objects[idx].translate(&Vec3::new(0.0, 1.0, 0.0));
-                    self.redraw();
-                }
-                if ui.button("Transladar -Y").clicked() {
-                    self.objects[idx].translate(& Vec3::new(0.0, -1.0, 0.0));
-                    self.redraw();
-                }
-            });
-            ui.horizontal(|ui| {
-                if ui.button("Transladar +Z").clicked() {
-                    self.objects[idx].translate(&Vec3::new(0.0, 0.0, 1.0));
-                    self.redraw();
-                }
-                if ui.button("Transladar -Z").clicked() {
-                    self.objects[idx].translate(&Vec3::new(0.0, 0.0, -1.0));
-                    self.redraw();
-                }
-            });
-            ui.horizontal(|ui| {
-                if ui.button("Escalar +").clicked() {
-                    self.objects[idx].scale(1.05);
-                    self.redraw();
-                }
-                if ui.button("Escalar -").clicked() {
-                    self.objects[idx].scale(0.95);
-                    self.redraw();
-                }
-            });
+            }
+            Tab::World => {
+                ui.heading("Iluminação");
+                ui.collapsing("Ila (iluminação ambiente)", |ui| {
+                    ui.add(TextEdit::singleline(&mut self.ila.r)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.ila.g)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.ila.b)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    if ui.button("Aplicar").clicked() {
+                        parse_input("R:", &mut self.render.light.ila.x, &mut self.ila.r);
+                        parse_input("G:", &mut self.render.light.ila.y, &mut self.ila.g);
+                        parse_input("B:", &mut self.render.light.ila.z, &mut self.ila.b);
+                        redraw = true;
+                    }
+                });
+                ui.collapsing("L (posição)", |ui| {
+                    ui.add(TextEdit::singleline(&mut self.l.x)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.l.y)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.l.z)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    if ui.button("Aplicar").clicked() {
+                        parse_input("X:", &mut self.render.light.l.x, &mut self.l.x);
+                        parse_input("Y:", &mut self.render.light.l.y, &mut self.l.y);
+                        parse_input("Z:", &mut self.render.light.l.z, &mut self.l.z);
+                        redraw = true;
+                    }
+                });
+                ui.collapsing("Il (emissão)", |ui| {
+                    ui.add(TextEdit::singleline(&mut self.il.r)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.il.g)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.il.b)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    if ui.button("Aplicar").clicked() {
+                        parse_input("R:", &mut self.render.light.il.x, &mut self.il.r);
+                        parse_input("G:", &mut self.render.light.il.y, &mut self.il.g);
+                        parse_input("B:", &mut self.render.light.il.z, &mut self.il.b);
+                        redraw = true;
+                    }
+                });
+
+                ui.separator();
+                ui.heading("Câmera");
+                ui.collapsing("VRP (posição da câmera)", |ui| {
+                    ui.add(TextEdit::singleline(&mut self.vrp.x)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.vrp.y)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.vrp.z)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    if ui.button("Aplicar").clicked() {
+                        parse_input("X:", &mut self.render.camera.vrp.x, &mut self.vrp.x);
+                        parse_input("Y:", &mut self.render.camera.vrp.y, &mut self.vrp.y);
+                        parse_input("Z:", &mut self.render.camera.vrp.z, &mut self.vrp.z);
+                        self.render.calc_sru_srt_matrix();
+                        redraw = true;
+                    }
+                });
+                ui.collapsing("Y (orientação da câmera)", |ui| {
+                    ui.add(TextEdit::singleline(&mut self.y.x)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.y.y)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.y.z)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    if ui.button("Aplicar").clicked() {
+                        parse_input("X:", &mut self.render.camera.y.x, &mut self.y.x);
+                        parse_input("Y:", &mut self.render.camera.y.y, &mut self.y.y);
+                        parse_input("Z:", &mut self.render.camera.y.z, &mut self.y.z);
+                        self.render.calc_sru_srt_matrix();
+                        redraw = true;
+                    }
+                });
+                ui.collapsing("P (ponto focal)", |ui| {
+                    ui.add(TextEdit::singleline(&mut self.p.x)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.p.y)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.p.z)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    if ui.button("Aplicar").clicked() {
+                        parse_input("X:", &mut self.render.camera.p.x, &mut self.p.x);
+                        parse_input("Y:", &mut self.render.camera.p.y, &mut self.p.y);
+                        parse_input("Z:", &mut self.render.camera.p.z, &mut self.p.z);
+                        self.render.calc_sru_srt_matrix();
+                        redraw = true;
+                    }
+                });
+                ui.collapsing("Janela", |ui| {
+                    ui.add(TextEdit::singleline(&mut self.window_xmin)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.window_xmax)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.window_ymin)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.window_ymax)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    if ui.button("Aplicar").clicked() {
+                        parse_input("Xmin:", &mut self.render.window.xmin, &mut self.window_xmin);
+                        parse_input("Xmax:", &mut self.render.window.xmax, &mut self.window_xmax);
+                        parse_input("Ymin:", &mut self.render.window.ymin, &mut self.window_ymin);
+                        parse_input("Ymax:", &mut self.render.window.ymax, &mut self.window_ymax);
+                        self.render.calc_sru_srt_matrix();
+                        redraw = true;
+                    }
+                });
+                ui.collapsing("Porta de visão", |ui| {
+                    ui.add(TextEdit::singleline(&mut self.viewport_umin)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.viewport_umax)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.viewport_vmin)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    ui.add(TextEdit::singleline(&mut self.viewport_vmax)
+                        .desired_width(GUI_VECTOR_INPUT_WIDTH));
+                    if ui.button("Aplicar").clicked() {
+                        let umin = self.render.viewport.umin;
+                        let umax = self.render.viewport.umax;
+                        let vmin = self.render.viewport.vmin;
+                        let vmax = self.render.viewport.vmax;
+                        parse_input("Umin:", &mut self.render.viewport.umin, &mut self.viewport_umin);
+                        parse_input("Umax:", &mut self.render.viewport.umax, &mut self.viewport_umax);
+                        parse_input("Vmin:", &mut self.render.viewport.vmin, &mut self.viewport_vmin);
+                        parse_input("Vmax:", &mut self.render.viewport.vmax, &mut self.viewport_vmax);
+                        if self.render.viewport.umax - self.render.viewport.umin < GUI_VIEWPORT_WIDTH - 1.0 {
+                            self.viewport_umax = "Umax: Inválido!".to_string();
+                            self.viewport_umin = "Umin: Inválido!".to_string();
+                            self.render.viewport.umin = umin;
+                            self.render.viewport.umax = umax;
+                        }
+                        if self.render.viewport.vmax - self.render.viewport.vmin < GUI_VIEWPORT_HEIGHT - 1.0 {
+                            self.viewport_vmax = "Vmax: Inválido!".to_string();
+                            self.viewport_vmin = "Vmin: Inválido!".to_string();
+                            self.render.viewport.vmin = vmin;
+                            self.render.viewport.vmax = vmax;
+                        }
+                        self.render.calc_sru_srt_matrix();
+                        redraw = true;
+                    }
+                });
+            }
+            Tab::About => {
+                ui.heading("Desenvolvedores");
+                ui.label("- Luiz Fernando Becher de Araujo");
+                ui.label("- Heloisa Aparecida Alves");
+                ui.label("- Matheus Lucas Ferreira Jacinto");
+                ui.separator();
+                ui.heading("Desenvolvimento");
+                ui.label("Ano: 2024-2025");
+                ui.label("Linguagem: Rust");
+                ui.hyperlink("https://github.com/lbecher/cg-final-oficial/");
+            }
         }
 
         if redraw {
@@ -823,6 +862,14 @@ impl App {
 enum Theme {
     Light,
     Dark,
+}
+
+#[derive(PartialEq)]
+enum Tab {
+    General,
+    Objects,
+    World,
+    About,
 }
 
 impl Theme {
