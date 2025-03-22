@@ -332,7 +332,7 @@ impl App {
             if self.parse_object_props() {
                 let new_object = Object::new(self.ni_value, self.nj_value, self.ti_value, self.tj_value, self.resi_value, self.resj_value, self.smoothness_value, self.ka_value, self.kd_value, self.ks_value, self.n_value, self.closed);
                 self.objects.push(new_object);
-                self.selected_object = Some(self.objects.len() - 1);
+                self.select_object(self.objects.len() - 1);
                 redraw = true;
             }
         }
@@ -417,7 +417,7 @@ impl App {
         }
         for i in 0..self.objects.len() {
             if ui.selectable_label(self.selected_object == Some(i), format!("Objeto {}", i)).clicked() {
-                self.selected_object = Some(i);
+                self.select_object(i);
             }
         }
 
@@ -789,6 +789,33 @@ impl App {
         success &= parse_input("B:", &mut self.ks_value.z, &mut self.ks.b);
         success &= parse_input("N:", &mut self.n_value, &mut self.n);
         success
+    }
+
+    pub fn select_object(&mut self, index: usize) {
+        if let Some(object) = self.objects.get(index) {
+            self.ni_value = object.ni;
+            self.nj_value = object.nj;
+            self.ti_value = object.ti;
+            self.tj_value = object.tj;
+            self.resi_value = object.resi;
+            self.resj_value = object.resj;
+            self.smoothness_value = object.smoothing_iterations;
+            self.ka_value = object.ka;
+            self.kd_value = object.kd;
+            self.ks_value = object.ks;
+            self.n_value = object.n;
+            self.ni = format!("NI: {}", self.ni_value);
+            self.nj = format!("NJ: {}", self.nj_value);
+            self.ti = format!("TI: {}", self.ti_value);
+            self.tj = format!("TJ: {}", self.tj_value);
+            self.resi = format!("RESI: {}", self.resi_value);
+            self.resj = format!("RESJ: {}", self.resj_value);
+            self.smoothness = format!("Passos: {}", self.smoothness_value);
+            self.ka = ColorInputData::new(self.ka_value.x, self.ka_value.y, self.ka_value.z);
+            self.kd = ColorInputData::new(self.kd_value.x, self.kd_value.y, self.kd_value.z);
+            self.ks = ColorInputData::new(self.ks_value.x, self.ks_value.y, self.ks_value.z);
+            self.selected_object = Some(index);
+        }
     }
 }
 

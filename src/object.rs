@@ -48,19 +48,21 @@ pub struct Object {
     /// Quantidades de pontos de controle na direção i.
     pub ni: u8,
     /// Quantidades de pontos de controle na direção j.
-    nj: u8,
+    pub nj: u8,
     /// Grau do polinômio interpolador na direção i.
-    ti: u8,
+    pub ti: u8,
     /// Grau do polinômio interpolador na direção j.
-    tj: u8,
+    pub tj: u8,
     /// Resolução na direção i.
-    resi: u8,
+    pub resi: u8,
     /// Resolução na direção j.
-    resj: u8,
+    pub resj: u8,
     /// Nós (knots) na direção i.
-    knots_i: Vec<f32>,
+    pub knots_i: Vec<f32>,
     /// Nós (knots) na direção j.
-    knots_j: Vec<f32>,
+    pub knots_j: Vec<f32>,
+    /// Passos de suavização dos pontos de controle.
+    pub smoothing_iterations: u8,
 
     /// Pontos de controle da superfície.
     pub control_points: Vec<Vec3>,
@@ -116,6 +118,7 @@ impl Object {
             resj,
             knots_i,
             knots_j,
+            smoothing_iterations,
 
             control_points,
             vertices,
