@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::f32::INFINITY;
 use eframe::emath::OrderedFloat;
 use rayon::prelude::*;
 
@@ -54,13 +53,14 @@ pub struct Render {
     pub buffer_width: usize,
     pub buffer_height: usize,
     pub visibility_filter: bool,
+    pub background: [u8; 4],
 }
 
 impl Default for Render {
     fn default() -> Self {
-        let shader_type = ShaderType::Wireframe;
+        let shader_type = ShaderType::Flat;
         let camera = Camera {
-            vrp: Vec3::new(0.0, 0.0, 2000.0),
+            vrp: Vec3::new(0.0, 3.0, 20.0),
             p: Vec3::new(0.0, 0.0, 0.0),
             y: Vec3::new(0.0, 1.0, 0.0),
         };
@@ -77,9 +77,9 @@ impl Default for Render {
             vmax: GUI_VIEWPORT_HEIGHT - 1.0,
         };
         let light = Light {
-            l: Vec3::new(500.0, 0.0, 2000.0),
-            il: Vec3::new(0.0, 0.0, 255.0),
-            ila: Vec3::new(125.0, 0.0, 0.0),
+            l: Vec3::new(0.0, 5.0, 6.0),
+            il: Vec3::new(255.0, 250.0, 235.0),
+            ila: Vec3::new(70.0, 70.0, 80.0),
         };
 
         let m_sru_srt = Mat4::identity();
@@ -89,7 +89,7 @@ impl Default for Render {
         let buffer_height = GUI_VIEWPORT_HEIGHT as usize;
 
         let buffer = vec![0; buffer_width * buffer_height * 4];
-        let zbuffer = vec![-INFINITY; buffer_width * buffer_height];
+        let zbuffer = vec![f32::NEG_INFINITY; buffer_width * buffer_height];
 
         let mut obj = Self {
             shader_type,
@@ -103,7 +103,8 @@ impl Default for Render {
             buffer,
             buffer_width,
             buffer_height,
-            visibility_filter: false,
+            visibility_filter: true,
+            background: [0, 0, 0, 255],
         };
 
         obj.calc_sru_srt_matrix();
@@ -115,8 +116,10 @@ impl Default for Render {
 impl Render {
     /// Limpa os buffers de imagem e profundidade.
     pub fn clean_buffers(&mut self) {
-        self.buffer = vec![0; self.buffer.len()];
-        self.zbuffer = vec![-INFINITY; self.zbuffer.len()];
+        for pixel in self.buffer.chunks_exact_mut(4) {
+            pixel.copy_from_slice(&self.background);
+        }
+        self.zbuffer.fill(f32::NEG_INFINITY);
     }
 
     /// Algoritmo para desenho de linhas.
@@ -272,12 +275,18 @@ impl Render {
         &self,
         object: &mut Object
     ) {
+        let view_direction = self.view_direction();
         for face in object.faces.iter_mut() {
             face.calc_normal(&object.vertices);
             face.calc_centroid(&object.vertices);
-            face.calc_direction(&self.camera.vrp);
+            face.direction = view_direction;
             self.calc_visibility(face);
         }
+    }
+
+    #[inline(always)]
+    fn view_direction(&self) -> Vec3 {
+        (self.camera.vrp - self.camera.p).normalize()
     }
 
     /// Calcula o teste de visibilidade das arestas da malha.
@@ -310,7 +319,6 @@ impl Render {
         )
     }
 
-    /// Calcula a matriz de projeção axonométrica isométrica.
     fn calc_proj_matrix(&self) -> Mat4 {
         Mat4::identity()
     }
@@ -721,7 +729,7 @@ impl Render {
                             continue;
                         }
 
-                        let color = [0, 0, 0, 0];
+                        let color = self.background;
                         self.paint(*i, j, color);
                     }
                 }
@@ -752,7 +760,7 @@ impl Render {
 
             let nn: Vec3 = face.normal;
             let ln: Vec3 = (self.light.l - face.centroid).normalize();
-            let sn: Vec3 = (self.camera.vrp - face.centroid).normalize();
+            let sn: Vec3 = self.view_direction();
             let color = self.calc_color(
                 object.ka,
                 object.kd,
@@ -836,7 +844,7 @@ impl Render {
 
                 let nn: Vec3 = normal.normalize();
                 let ln: Vec3 = (self.light.l - vertex).normalize();
-                let sn: Vec3 = (self.camera.vrp - vertex).normalize();
+                let sn: Vec3 = self.view_direction();
                 let color = self.calc_color(
                     object.ka,
                     object.kd,
@@ -936,7 +944,7 @@ impl Render {
         self.update_faces(object);
 
         let ln: Vec3 = (self.light.l - object.centroid).normalize();
-        let sn: Vec3 = (self.camera.vrp - object.centroid).normalize();
+        let sn: Vec3 = self.view_direction();
         let hn: Vec3 = (ln + sn).normalize();
 
         let vertices_srt: Vec<Vec3> = self.calc_srt_convertions(&object.vertices);

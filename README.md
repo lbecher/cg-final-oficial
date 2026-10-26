@@ -1,34 +1,32 @@
-# Bezier Spline
-## Curvas de Bezier
+# T-Rex 3D
+
 >Colaboradores: [Heloisa Alves](https://github.com/Helogizzy), [Luiz Becher](https://github.com/lbecher) e [Matheus Jacinto](https://github.com/MatheusLFJacinto)
 
 ## Sobre
-As curvas de Bézier são funções matemáticas muito utilizadas em gráficos computacionais, design e modelagem geométrica para representar curvas suaves e facilmente controláveis. Elas foram desenvolvidas na década de 1960 por Pierre Bézier, engenheiro da Renault, e desde então se tornaram fundamentais em áreas como animação, tipografia digital, softwares de design e interfaces gráficas.
 
-O presente trabalho aborda a representação de curvas de Bézier associada a três métodos de sombreamento distintos: Constante, Gouraud e Phong. Inicialmente, uma malha é modelada, exibindo a parte visível em verde e a parte não visível em vermelho. Adicionalmente, os pontos de controle da curva podem ser movimentados, permitindo ajustes interativos na forma da curva diretamente na tela. A imagem abaixo exemplifica as características mencionadas:
+Versão 3D do T-Rex Game (o jogo do dinossauro do Google Chrome), proposta no Trabalho 2 de Computação Gráfica – turma 2026. O T-Rex é um cubo, os cactos são esferas de poucas faces e um Sol amarelo atravessa o céu como fonte de luz da cena.
 
-![representacao_app](./malha.jpg)
+Toda a renderização é feita em software, sem OpenGL: pipeline de câmera de Alvy-Ray Smith (SRU → SRC → projeção ortográfica → janela/porta de visão), preenchimento por scanline com z-buffer e sombreamento constante, Gouraud ou Phong (modelo de iluminação ambiente + difuso + especular).
 
-## Sombreamento
+## Como jogar
 
-### Constante
-Nesse método, a iluminação é calculada apenas uma vez por face, usando a normal da superfície. O resultado é uma cor uniforme em todo o polígono, o que deixa a aparência facetada. É simples e rápido, mas pouco realista.
+- Barra de espaços ou clique na tela: inicia o jogo, faz o cubo saltar e reinicia após uma colisão.
+- O painel lateral permite trocar o sombreamento e ligar/desligar a ocultação de faces pela normal.
 
-![representacao_app](./constante.jpg)
+## Compilação e execução
 
-### Gouraud
-O sombreamento de Gouraud calcula a iluminação em cada vértice e depois interpola os valores para o interior da face. Isso cria transições suaves entre polígonos, mas pode perder detalhes de brilho especular se ele não coincidir com um vértice.
+Requer [Rust](https://rustup.rs/).
 
-![representacao_app](./gouraud.jpg)
+```sh
+cargo run --release
+```
 
-### Phong
-O modelo de Phong interpola as normais entre os vértices e calcula a iluminação em cada pixel. Esse processo resulta em superfícies muito mais realistas, com reflexos e brilhos bem definidos, embora seja mais custoso computacionalmente.
+O script `build.sh` instala as dependências e gera os executáveis para Linux e Windows.
 
-![representacao_app](./phong.jpg)
+## Estrutura
 
-
-
-
-
-
-
+- `src/game.rs` – estado e regras do jogo, montagem da cena a cada quadro.
+- `src/object.rs` – malhas poligonais (paralelepípedo e esfera) e aplicação de transformações.
+- `src/transform.rs` – matrizes de translação, rotação e escala.
+- `src/render.rs` – pipeline de visualização, scanline, z-buffer e sombreamentos.
+- `src/app/app.rs` – janela, laço de animação, entrada do usuário e painel lateral.

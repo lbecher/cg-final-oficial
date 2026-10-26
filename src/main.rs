@@ -1,7 +1,9 @@
 mod app;
 mod constants;
+mod game;
 mod object;
 mod render;
+mod transform;
 mod types;
 
 use constants::*;
@@ -10,7 +12,7 @@ use eframe::egui::{Vec2, ViewportBuilder};
 use app::App;
 
 fn main() -> Result {
-    let title = "Aleluia";
+    let title = "T-Rex 3D";
 
     let width = GUI_VIEWPORT_WIDTH + GUI_SIDEBAR_WIDTH + GUI_VIEWPORT_PADDING * 2.0;
     let height = GUI_VIEWPORT_HEIGHT + GUI_VIEWPORT_PADDING * 2.0;
